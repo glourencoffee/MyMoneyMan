@@ -191,10 +191,12 @@ class BalanceTreeModel(QtCore.QAbstractItemModel):
             stmt = sa.union_all(
                 (
                     sa.select(cte.c.parent_id, cte.c.id, cte.c.name, cte.c.description,
-                              (
+                              sa.cast(
                                 sa.func.ifnull(target_sum_stmt.scalar_subquery(), 0) -
-                                sa.func.ifnull(origin_sum_stmt.scalar_subquery(), 0)
-                              ))
+                                sa.func.ifnull(origin_sum_stmt.scalar_subquery(), 0),
+                                models.sql.Decimal(8)
+                              )
+                      )
                       .select_from(cte)
                 ),
                 (
