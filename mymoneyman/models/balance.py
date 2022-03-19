@@ -106,45 +106,112 @@ class BalanceTreeModel(QtCore.QAbstractItemModel):
 
         with models.sql.get_session() as session:
             ################################################################################
-            #    SELECT a.parent_id, a.id, a.name, a.description, SUM(t.quantity)
-            #      FROM subtransaction AS t
-            #      JOIN account        AS a ON t.account_id = a.id
-            #     WHERE a.type in :account_types
-            #  GROUP BY a.id
+            # WITH cte AS (
+            #   SELECT a.parent_id    AS parent_id,
+            #          a.id           AS id,
+            #          a.name         AS name,
+            #          a.description  AS description
+            #     FROM subtransaction AS s
+            #     JOIN account        AS a ON s.origin_id = a.id
+            #    WHERE a.type in `account_types`
+            #    UNION
+            #   SELECT a.parent_id    AS parent_id,
+            #          a.id           AS id,
+            #          a.name         AS name,
+            #          a.description  AS description
+            #     FROM subtransaction AS s
+            #     JOIN account        AS a ON s.target_id = a.id
+            #    WHERE a.type in `account_types`
+            # )
+            #    SELECT parent_id, id, name, description,
+            #           (
+            #             IFNULL((SELECT SUM(s.quantity) FROM subtransaction AS s WHERE s.target_id = cte.id GROUP BY s.target_id), 0) -
+            #             IFNULL((SELECT SUM(s.quantity) FROM subtransaction AS s WHERE s.origin_id = cte.id GROUP BY s.origin_id), 0)
+            #           )
+            #      FROM cte
             # UNION ALL
             #    SELECT a.parent_id, a.id, a.name, a.description, 0
             #      FROM account AS a
-            #     WHERE a.type in :account_types
-            #       AND (SELECT COUNT() FROM subtransaction AS t WHERE t.account_id = a.id) = 0
-            #-------------------------------------------------------------------------------
-            # Explanation:
-            #
-            # (Select all accounts that have transactions and are in `account_types`,
-            #  summing up their transactions.)
+            #     WHERE a.type in `account_types`
+            #       AND (SELECT COUNT() FROM subtransaction AS t WHERE t.origin_id = a.id) = 0
+            #       AND (SELECT COUNT() FROM subtransaction AS t WHERE t.target_id = a.id) = 0
+            #----------------------------------------------------------------------------------
+            # Query explanation:
+            # 
+            # WITH cte AS (
+            #   Select all accounts that:
+            #    1) have transactions; and
+            #    2) are in the origin side of their transactions; and
+            #    3) are in `account_types`
+            #   UNION
+            #   Select all accounts that:
+            #    1) have transactions; and
+            #    2) are in the target side of their transactions; and
+            #    3) are in `account_types`
+            # )
+            # Select account information and calculate their balance from `cte`
             # UNION ALL
-            # (Select all accounts that have no transactions and are in `account_types`,
-            #  leaving their balance as 0.)
+            # Select all accounts that have no transactions and are in `account_types`,
+            # leaving their balance as 0.
+            #----------------------------------------------------------------------------------
+            # Technical explanation:
+            #
+            # `cte` will give information about ALL accounts that have transactions. From
+            # that, we calculate their balance by subtracting the account's inflow and outflow.
+            #
+            # Then, we retrieve accounts that have no transactions by looking up accounts
+            # that are neither an origin account nor a target account for any transaction.
+            #
+            # All the accounts retrieved are filtered according to `account_types`.
             ################################################################################
 
-            T = models.Subtransaction
+            S = models.Subtransaction
             A = models.Account
+
+            cte_stmt = sa.union(
+                (
+                    sa.select(A.parent_id, A.id, A.name, A.description)
+                      .select_from(S)
+                      .join(A, S.origin_id == A.id)
+                      .where(A.type.in_(account_types))
+                ),
+                (
+                    sa.select(A.parent_id, A.id, A.name, A.description)
+                      .select_from(S)
+                      .join(A, S.target_id == A.id)
+                      .where(A.type.in_(account_types))
+                )
+            )
+            
+            cte = cte_stmt.cte('cte')
+
+            origin_sum_stmt = sa.select(sa.func.sum(S.quantity)).select_from(S).where(S.origin_id == cte.c.id).group_by(S.origin_id)
+            target_sum_stmt = sa.select(sa.func.sum(S.quantity)).select_from(S).where(S.target_id == cte.c.id).group_by(S.target_id)
 
             stmt = sa.union_all(
                 (
-                    sa.select(A.parent_id, A.id, A.name, A.description, sa.func.sum(T.quantity))
-                      .select_from(T)
-                      .join(A, T.account_id == A.id)
-                      .where(A.type.in_(account_types))
-                      .group_by(A.id)
+                    sa.select(cte.c.parent_id, cte.c.id, cte.c.name, cte.c.description,
+                              (
+                                sa.func.ifnull(target_sum_stmt.scalar_subquery(), 0) -
+                                sa.func.ifnull(origin_sum_stmt.scalar_subquery(), 0)
+                              ))
+                      .select_from(cte)
                 ),
                 (
                     sa.select(A.parent_id, A.id, A.name, A.description, sa.literal(0))
                       .where(A.type.in_(account_types))
                       .where(
-                            sa.select(sa.func.count())
-                              .where(T.account_id == A.id)
-                              .scalar_subquery() == 0
-                        )
+                          sa.select(sa.func.count())
+                            .select_from(S)
+                            .where(S.origin_id == A.id)
+                            .scalar_subquery() == 0
+                      )
+                      .where(
+                          sa.select(sa.func.count())
+                            .select_from(S)
+                            .where(S.target_id == A.id)
+                            .scalar_subquery() == 0
+                      )
                 )
             )
 
