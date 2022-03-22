@@ -9,11 +9,26 @@ Base = sa_orm.declarative_base(metadata=meta)
 
 _engine: typing.Optional[sa.engine.Engine] = None
 
-# Adapted from 
+# Adapted from https://stackoverflow.com/a/52526847
 class Decimal(sa_types.TypeDecorator):
-    """ e.g. value = Column(Decimal(2)) means a value such as
-    # Decimal('12.34') will be converted to 1234 in Sqlite
+    """Stores a `decimal.Decimal` object as `sqlalchemy.Integer` to SQLite.
+    
+    It seems that the native SQLite dialect doesn't support the SQLAlchemy
+    `Numeric` type, so this class is used as a replacement to store decimal
+    values instead. For example, a column that is defined as:
+
+    >>> my_column = sqlalchemy.Column(Decimal(2))
+
+    will store decimal values as the integral equivalent of 2 decimal places
+    of that value, that is, `10 ** 2` times the original value. Thus, a value
+    such as `decimal.Decimal('12.34')` will be stored into SQLite as the integer
+    `1234`.
+
+    Conversely, values retrieved from the database in that column will be converted
+    to the `decimal.Decimal` equivalent of the stored integer. As such, the integer
+    `1234` will be retrieved as `decimal.Decimal('12.34')`.
     """
+
     impl = sa_types.Integer
 
     def __init__(self, decimal_places: int):

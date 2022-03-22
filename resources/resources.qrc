@@ -2,11 +2,12 @@
 <RCC version='1.0'>
     <qresource prefix='/icons'>
         <file alias='add-account.png'>icons/add-account.png</file>
-        <file alias='add-group.png'>icons/add-group.png</file>
         <file alias='del-account.png'>icons/delete-account.png</file>
-        <file alias='del-group.png'>icons/delete-group.png</file>
         <file alias='edit-account.png'>icons/edit-account.png</file>
         <file alias='grid-layout.png'>icons/grid-layout.png</file>
         <file alias='list-layout.png'>icons/list-layout.png</file>
+        <file alias='insert.png'>icons/plus.png</file>
+        <file alias='delete.png'>icons/delete.png</file>
+        <file alias='cancel.png'>icons/stop.png</file>
     </qresource>
 </RCC>

@@ -28,6 +28,10 @@ class AccountGroup(enum.IntEnum):
     Equity    = 4
 
     @staticmethod
+    def allButEquity() -> typing.Tuple[AccountGroup]:
+        return (AccountGroup.Asset, AccountGroup.Liability, AccountGroup.Income, AccountGroup.Expense)
+
+    @staticmethod
     def fromAccountType(account_type: AccountType) -> AccountGroup:
         T = AccountType
 
@@ -105,6 +109,14 @@ class AccountTreeItem:
     def name(self) -> str:
         return self._name
 
+    def extendedName(self, sep: str = ':') -> str:
+        name = self._name
+
+        if self._parent is not None:
+            return self._parent.extendedName() + sep + name
+
+        return name
+
     def description(self) -> str:
         return self._desc
 
@@ -113,6 +125,15 @@ class AccountTreeItem:
 
     def children(self) -> typing.List[AccountTreeItem]:
         return self._children.copy()
+
+    def nestedChildren(self) -> typing.List[AccountTreeItem]:
+        children = []
+
+        for child in self._children:
+            children.append(child)
+            children += child.nestedChildren()
+        
+        return children
 
     def appendChild(self, child: AccountTreeItem):
         self._children.append(child)
