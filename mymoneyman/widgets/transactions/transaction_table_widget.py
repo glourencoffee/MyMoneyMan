@@ -11,12 +11,24 @@ class TransactionTableWidget(QtWidgets.QWidget):
         self._initLayouts()
     
     def _initWidgets(self):
-        delegate = common.DateTimeDelegate('dd/MM/yyyy hh:mm:ss')
-
         self._view = QtWidgets.QTableView()
         self._view.setModel(models.TransactionTableModel())
+
         self._view.setSelectionMode(QtWidgets.QTableView.SelectionMode.SingleSelection)
-        self._view.setItemDelegateForColumn(1, delegate)
+        self._view.setSelectionBehavior(QtWidgets.QTableView.SelectionBehavior.SelectRows)
+        self._view.setEditTriggers(QtWidgets.QAbstractItemView.AllEditTriggers)
+
+        self._date_time_delegate = common.DateTimeDelegate('dd/MM/yyyy hh:mm:ss')
+        self._acc_list_delegate  = common.AccountBoxDelegate()
+        self._inflow_delegate    = common.SpinBoxDelegate()
+        self._outflow_delegate   = common.SpinBoxDelegate()
+
+        Column = models.TransactionTableItem.Column
+
+        self._view.setItemDelegateForColumn(Column.Date,         self._date_time_delegate)
+        self._view.setItemDelegateForColumn(Column.Transference, self._acc_list_delegate)
+        self._view.setItemDelegateForColumn(Column.Inflow,       self._inflow_delegate)
+        self._view.setItemDelegateForColumn(Column.Outflow,      self._outflow_delegate)
 
     def _initLayouts(self):
         main_layout = QtWidgets.QVBoxLayout()
