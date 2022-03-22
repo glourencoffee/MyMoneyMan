@@ -39,13 +39,15 @@ class Decimal(sa_types.TypeDecorator):
 
     def process_bind_param(self, value, dialect):
         if value is not None:
-            value = int(decimal.Decimal(value) * self.multiplier_int)
+            value = round(decimal.Decimal(value), self.decimal_places)
+            value = int(value * self.multiplier_int)
 
         return value
 
     def process_result_value(self, value, dialect):
         if value is not None:
             value = decimal.Decimal(value) / self.multiplier_int
+            value = round(value, self.decimal_places)
 
         return value
 
