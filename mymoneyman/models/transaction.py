@@ -79,6 +79,8 @@ class TransactionType(enum.IntEnum):
             if   target_type in (T.Cash, T.Bank, T.Asset): return TransactionType.AssetTransfer
             elif target_type == T.Security:                return TransactionType.Divestment
             elif target_type == T.Expense:                 return TransactionType.Expense
+            elif target_type in (T.Liability, T.CreditCard):
+                return TransactionType.Repayment
 
         elif origin_type == T.Cash:
             if   target_type == T.Cash:      return TransactionType.CashTransfer
@@ -86,6 +88,8 @@ class TransactionType(enum.IntEnum):
             elif target_type == T.Security:  return TransactionType.Investment
             elif target_type == T.Asset:     return TransactionType.AssetTransfer
             elif target_type == T.Expense:   return TransactionType.CashExpense
+            elif target_type in (T.Liability, T.CreditCard):
+                return TransactionType.Repayment
         
         elif origin_type == T.Bank:
             if   target_type == T.Bank:     return TransactionType.BankTransfer
@@ -93,6 +97,8 @@ class TransactionType(enum.IntEnum):
             elif target_type == T.Security: return TransactionType.Investment
             elif target_type == T.Asset:    return TransactionType.AssetTransfer
             elif target_type == T.Expense:  return TransactionType.OnDebitExpense
+            elif target_type in (T.Liability, T.CreditCard):
+                return TransactionType.Repayment
         
         elif origin_type == T.Security:
             if target_type in (T.Cash, T.Bank, T.Asset):
@@ -101,12 +107,18 @@ class TransactionType(enum.IntEnum):
             elif target_type == T.Security:
                 return TransactionType.AssetTransfer
 
-        # elif origin_type == T.Liability:
-        #     return
+        elif origin_type in (T.Liability, T.CreditCard):
+            if target_type in (T.Cash, T.Bank, T.Security, T.Asset):
+                if origin_type == T.Liability:
+                    return TransactionType.CreditUsag
+                else:
+                    return TransactionType.CreditCardPayment
 
-        # if target_type == T.Liability:
+            if target_type in (T.Liability, T.CreditCard):
+                return TransactionType.LiabilityTransfer
 
-        #     return TransactionType.Repayment
+            if target_type == T.Expense:
+                return TransactionType.OnCreditExpense
 
         return TransactionType.Undefined
 
@@ -159,7 +171,7 @@ class SubtransactionItem:
         elif reference_account_id == self._target_account_id:
             return self._quantity # inflow
         else:
-            raise ValueError('reference account id {reference_account_id} is neither an origin account nor a target acount')
+            raise ValueError(f'reference account id {reference_account_id} is neither an origin account nor a target acount')
 
     def originAccountId(self) -> int:
         return self._origin_account_id
