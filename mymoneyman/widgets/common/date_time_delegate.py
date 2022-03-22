@@ -2,10 +2,10 @@ import typing
 from PyQt5 import QtCore, QtWidgets
 
 class DateTimeDelegate(QtWidgets.QStyledItemDelegate):
-    def __init__(self, datetime_format: str, parent: typing.Optional[QtCore.QObject] = None):
+    def __init__(self, display_format: str, parent: typing.Optional[QtCore.QObject] = None):
         super().__init__(parent)
 
-        self._datetime_format = datetime_format
+        self._display_format = display_format
     
     def createEditor(self,
                      parent: QtWidgets.QWidget,
@@ -14,31 +14,26 @@ class DateTimeDelegate(QtWidgets.QStyledItemDelegate):
     ):
         editor = QtWidgets.QDateTimeEdit(parent)
         editor.setCalendarPopup(True)
-        editor.setDisplayFormat(self._datetime_format)
-        self.setDateTimeFromIndex(editor, index)
+        editor.setDisplayFormat(self._display_format)
+        
+        self.setEditorData(editor, index)
         
         return editor
     
-    def setEditorData(self, editor: QtWidgets.QWidget, index: QtCore.QModelIndex):
-        self.setDateTimeFromIndex(editor, index)
-
-    def setDateTimeFromIndex(self, editor: QtWidgets.QDateTimeEdit, index: QtCore.QModelIndex):
+    def setEditorData(self, editor: QtWidgets.QDateTimeEdit, index: QtCore.QModelIndex):
         datetime = index.model().data(index, QtCore.Qt.ItemDataRole.EditRole)
 
-        editor: QtWidgets.QDateTimeEdit = editor
         editor.setDateTime(datetime)
 
-    def setModelData(self, editor: QtWidgets.QWidget, model: QtCore.QAbstractItemModel, index: QtCore.QModelIndex):
-        editor: QtWidgets.QDateTimeEdit = editor
+    def setModelData(self, editor: QtWidgets.QDateTimeEdit, model: QtCore.QAbstractItemModel, index: QtCore.QModelIndex):
         editor.interpretText()
 
         datetime = editor.dateTime()
-        model.setData(index, datetime.toString(self._datetime_format), QtCore.Qt.ItemDataRole.EditRole)
+        model.setData(index, editor.dateTime(), QtCore.Qt.ItemDataRole.EditRole)
 
     def updateEditorGeometry(self,
-                             editor: QtWidgets.QWidget,
+                             editor: QtWidgets.QDateTimeEdit,
                              option: QtWidgets.QStyleOptionViewItem,
                              index: QtCore.QModelIndex
     ):
-        editor: QtWidgets.QDateTimeEdit = editor
         editor.setGeometry(option.rect)
