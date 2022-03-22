@@ -191,6 +191,19 @@ class SubtransactionItem:
     def targetAccountType(self) -> models.AccountType:
         return self._target_account_type
 
+    def copy(self) -> SubtransactionItem:
+        return SubtransactionItem(
+            self.id(),
+            self.comment(),
+            self.quantity(),
+            self.originAccountId(),
+            self.originAccountName(),
+            self.originAccountType(),
+            self.targetAccountId(),
+            self.targetAccountName(),
+            self.targetAccountType()
+        )
+
     def __repr__(self) -> str:
         return (
             "SubtransactionItem<"
@@ -273,6 +286,7 @@ class TransactionTableItem:
             if reference_account_id == sub_item.originAccountId():
                 if sub_item.targetAccountName() != value:
                     sub_item._target_account_name = value
+                    # TODO: pass account type so we can refresh changes.
                     return True
             else:
                 if sub_item.originAccountName() != value:
@@ -299,7 +313,7 @@ class TransactionTableItem:
         sub_item = self._sub_items[0]
 
         if column == Column.Comment and isinstance(value, str):
-            if sub_item._comment == value:
+            if sub_item.comment() == value or (value == '' and sub_item.comment() is None):
                 return False
 
             sub_item._comment = value
@@ -320,10 +334,9 @@ class TransactionTableItem:
                 return True
 
         if column == Column.Inflow and isinstance(value, decimal.Decimal):
+            # TODO: use account currency's decimal places when currencies is introduced
+            value            = round(value, 8)
             current_quantity = sub_item.relativeQuantity(reference_account_id)
-
-            if current_quantity == value:
-                return False
 
             if current_quantity >= 0:
                 current_quantity = value
@@ -342,17 +355,19 @@ class TransactionTableItem:
                     sub_item._target_account_type = origin_type
 
             # TODO: use account currency's decimal places when currencies is introduced
-            sub_item._quantity = round(abs(current_quantity), 8)
+            current_quantity = round(abs(current_quantity), 8)
+
+            if current_quantity == sub_item.quantity():
+                return False
+            
+            sub_item._quantity = current_quantity
 
             return True
 
         if column == Column.Outflow and isinstance(value, decimal.Decimal):
+            # TODO: use account currency's decimal places when currencies is introduced
+            value            = round(-value, 8)
             current_quantity = sub_item.relativeQuantity(reference_account_id)
-
-            value = -value
-
-            if current_quantity == value:
-                return False
 
             if current_quantity <= 0:
                 current_quantity = value
@@ -371,7 +386,12 @@ class TransactionTableItem:
                     sub_item._origin_account_type = target_type
 
             # TODO: use account currency's decimal places when currencies is introduced
-            sub_item._quantity = round(abs(current_quantity), 8)
+            current_quantity = round(abs(current_quantity), 8)
+
+            if current_quantity == sub_item.quantity():
+                return False
+
+            sub_item._quantity = current_quantity
 
         return False
 
@@ -439,6 +459,14 @@ class TransactionTableItem:
 
         return None
 
+    def copy(self) -> TransactionTableItem:
+        return TransactionTableItem(
+            self.id(),
+            self.date(),
+            self.balance(),
+            [sub_item.copy() for sub_item in self._sub_items]
+        )
+
     def __repr__(self) -> str:
         return f"TransactionTableItem<id={self._id} type={repr(self.type())} date={repr(self._date)} balance={self._balance}>"
 
@@ -450,8 +478,7 @@ class TransactionTableModel(QtCore.QAbstractTableModel):
 
         # TODO: tr()
         self._columns = ('Type', 'Date', 'Comment', 'Transference', 'Inflow', 'Outflow', 'Balance')
-        self._account_id: typing.Optional[int] = None
-        self._items = []
+        self._reset(None)
 
     def selectAccount(self, account_id: int, extended_name_sep: str = ':'):
         transactions = collections.defaultdict(list)
@@ -577,9 +604,7 @@ class TransactionTableModel(QtCore.QAbstractTableModel):
                 transactions[(tra_id, tra_date)].append(sub_item)
         
         self.layoutAboutToBeChanged.emit()
-        
-        self._account_id = account_id
-        self._items = []
+        self._reset(account_id)
 
         balance = decimal.Decimal(0)
 
@@ -625,11 +650,14 @@ class TransactionTableModel(QtCore.QAbstractTableModel):
         
         self.layoutChanged.emit()
 
-    def updateTransaction(self, row: int) -> bool:
-        try:
-            item: TransactionTableItem = self._items[row]
-        except IndexError:
+    def hasDraft(self) -> bool:
+        return self._draft_item is not None
+
+    def persistDraft(self) -> bool:
+        if not self.hasDraft():
             return False
+
+        item = self._draft_item
 
         with models.sql.get_session() as session:
             session.execute(
@@ -653,9 +681,29 @@ class TransactionTableModel(QtCore.QAbstractTableModel):
 
             session.commit()
 
-            self.updateBalances(row)
+        row = self._draft_row
 
-            return True
+        # Reflect updates to the database on the model.
+        self._items[row] = item
+        self._draft_item = None    
+        self._draft_row  = -1
+
+        self.dataChanged.emit(self.index(row, 0), self.index(row, self.columnCount() - 1))
+        self.updateBalances(row)
+
+        return True
+
+    def discardDraft(self) -> bool:
+        if not self.hasDraft():
+            return False
+
+        row = self._draft_row
+
+        self._draft_item = None
+        self._draft_row  = -1
+        self.dataChanged.emit(self.index(row, 0), self.index(row, self.columnCount() - 1))
+
+        return True
 
     def updateBalances(self, start_row: int):
         if start_row == 0:
@@ -672,7 +720,9 @@ class TransactionTableModel(QtCore.QAbstractTableModel):
             updated = True
 
         if updated:
-            self.dataChanged.emit(self.index(start_row, 0), self.index(self.rowCount() - 1, self.columnCount() - 1))
+            column = TransactionTableItem.Column.Balance
+
+            self.dataChanged.emit(self.index(start_row, column), self.index(self.rowCount() - 1, column))
 
     def itemFromIndex(self, index: QtCore.QModelIndex) -> typing.Optional[TransactionTableItem]:
         if not index.isValid():
@@ -691,7 +741,11 @@ class TransactionTableModel(QtCore.QAbstractTableModel):
         col = TransactionTableItem.Column(index.column())
 
         item: TransactionTableItem = self._items[row]
-        
+
+        if self._draft_item is not None and self._draft_item.id() == item.id():
+            # If there's a draft for item at `row`, show draft instead.
+            item = self._draft_item
+
         return item.data(self._account_id, col, role)
 
     def setData(self, index: QtCore.QModelIndex, value: typing.Any, role: int = QtCore.Qt.ItemDataRole.EditRole) -> bool:
@@ -699,15 +753,36 @@ class TransactionTableModel(QtCore.QAbstractTableModel):
             return False
 
         row = index.row()
-        col = TransactionTableItem.Column(index.column())
-
         item: TransactionTableItem = self._items[row]
 
-        if item.setData(self._account_id, col, value, role):
-            # FIXME: This update on a index-basis is bad.
-            # Mark row as "dirty" as let model user update it instead.
-            self.updateTransaction(row)
+        is_new_draft = False
+
+        if not self.hasDraft():
+            # If there's no editing going on, that is, no draft, then start a new one.
+            self._draft_item = item.copy()
+            self._draft_row  = row
+            is_new_draft     = True
+
+        elif self._draft_item.id() != item.id():
+            # If a draft exists for an item which is not the current one being edited,
+            # ignore the editing request.
+            return False
+
+        col = TransactionTableItem.Column(index.column())
+
+        if self._draft_item.setData(self._account_id, col, value, role):
+            self.dataChanged.emit(self.index(row, 0), self.index(row, self.columnCount() - 1))
             return True
+        
+        # This check is for the case a draft was created for the first time, but there was
+        # no change to `item`, in which case we have a "fake draft." A draft must be always
+        # created by copying `item` because we don't know whether an item has changed before
+        # calling `TransactionTableItem.setData()`; and after we call it, it's already too late.
+        # Thus, if we created a new draft, but no changed was made to the item, we discard
+        # the new draft right away.
+        if is_new_draft:
+            self._draft_item = None
+            self._draft_row  = -1
 
         return False
 
@@ -734,3 +809,12 @@ class TransactionTableModel(QtCore.QAbstractTableModel):
 
     def columnCount(self, parent: QtCore.QModelIndex = QtCore.QModelIndex()) -> int:
         return len(self._columns)
+
+    ################################################################################
+    # Internals
+    ################################################################################
+    def _reset(self, account_id: typing.Optional[int]):
+        self._account_id = account_id
+        self._items      = []
+        self._draft_item = None
+        self._draft_row  = -1

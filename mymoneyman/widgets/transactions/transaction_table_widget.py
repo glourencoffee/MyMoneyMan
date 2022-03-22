@@ -30,6 +30,8 @@ class TransactionTableWidget(QtWidgets.QWidget):
         self._view.setItemDelegateForColumn(Column.Inflow,       self._inflow_delegate)
         self._view.setItemDelegateForColumn(Column.Outflow,      self._outflow_delegate)
 
+        self._view.selectionModel().currentRowChanged.connect(self._onCurrentRowChanged)
+
     def _initLayouts(self):
         main_layout = QtWidgets.QVBoxLayout()
         main_layout.addWidget(self._view)
@@ -38,3 +40,21 @@ class TransactionTableWidget(QtWidgets.QWidget):
 
     def model(self) -> models.TransactionTableModel:
         return self._view.model()
+
+    @QtCore.pyqtSlot(QtCore.QModelIndex, QtCore.QModelIndex)
+    def _onCurrentRowChanged(self, current: QtCore.QModelIndex, previous: QtCore.QModelIndex):
+        if not self.model().hasDraft():
+            return
+
+        ret = QtWidgets.QMessageBox.question(
+            self,
+            'Transaction Modified',
+            'The previously selected transaction was modified. Do you wish to save the changes?'
+        )
+        
+        if ret == QtWidgets.QMessageBox.StandardButton.Yes:
+            print('persisting changes')
+            self.model().persistDraft()
+        else:
+            print('discarding changes')
+            self.model().discardDraft()
