@@ -525,7 +525,7 @@ class TransactionTableModel(QtCore.QAbstractTableModel):
             #     JOIN account        AS origin ON s.origin_id      = origin.id
             #     JOIN account        AS target ON s.target_id      = target.id
             #    WHERE origin.id = :account_id OR target.id = :account_id
-            # ORDER BY t.id, t.date ASC
+            # ORDER BY t.date, t.id ASC
 
             top_stmt = (
                 sa.select(
@@ -593,8 +593,8 @@ class TransactionTableModel(QtCore.QAbstractTableModel):
                           Target.id == account_id
                       )
                   )
-                  .order_by(T.id.asc())
                   .order_by(T.date.asc())
+                  .order_by(T.id.asc())
             )
 
             result = session.execute(stmt).all()
