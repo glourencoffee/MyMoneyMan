@@ -15,7 +15,7 @@ class Transaction(models.sql.Base):
     id   = sa.Column(sa.Integer,  primary_key=True, autoincrement=True)
     date = sa.Column(sa.DateTime, nullable=False)
 
-    subtransactions = sa.orm.relationship('Subtransaction', back_populates='transaction')
+    subtransactions = sa.orm.relationship('Subtransaction', back_populates='transaction', cascade='all, delete-orphan')
 
     def __repr__(self) -> str:
         return f"Transaction<id={self.id} date={self.date}>"
@@ -676,6 +676,22 @@ class TransactionTableModel(QtCore.QAbstractTableModel):
     def hasDraft(self) -> bool:
         return self._draft_item is not None
 
+    def removeTransaction(self, transaction_id: int):
+        with models.sql.get_session() as session:
+            t = session.query(Transaction).filter_by(id=transaction_id).first()
+
+            session.delete(t)
+            session.commit()
+        
+        index = self.indexFromId(transaction_id)
+        item  = self.itemFromIndex(index)
+
+        if item is not None:
+            self.layoutAboutToBeChanged.emit()
+            self._items.remove(item)
+            self._updateBalances(index.row(), emit_data_changed=False)
+            self.layoutChanged.emit()
+
     def persistDraft(self) -> bool:
         if not self.hasDraft():
             return False
@@ -740,7 +756,7 @@ class TransactionTableModel(QtCore.QAbstractTableModel):
 
             self.dataChanged.emit(self.index(row, 0), self.index(row, self.columnCount() - 1))
 
-        self.updateBalances(row)
+        self._updateBalances(row)
 
         return True
 
@@ -775,30 +791,20 @@ class TransactionTableModel(QtCore.QAbstractTableModel):
     def insertable(self) -> bool:
         return self._insertable_item is not None
 
-    def updateBalances(self, start_row: int):
-        if start_row == 0:
-            start_balance = decimal.Decimal(0)
-        else:
-            start_balance = self._items[start_row - 1].balance()
-
-        updated = False
-
-        for item in itertools.islice(self._items, start_row, None):
-            start_balance += item.subtransactionTotal(self._account_id)
-            item._balance = start_balance
-
-            updated = True
-
-        if updated:
-            column = TransactionTableItem.Column.Balance
-
-            self.dataChanged.emit(self.index(start_row, column), self.index(self.rowCount() - 1, column))
-
     def itemFromIndex(self, index: QtCore.QModelIndex) -> typing.Optional[TransactionTableItem]:
         if not index.isValid():
             return None
 
         return self._items[index.row()]
+
+    def indexFromId(self, transaction_id: int) -> QtCore.QModelIndex:
+        for row in range(self.rowCount()):
+            item = self._items[row]
+
+            if item.id() == transaction_id:
+                return self.index(row, 0)
+        
+        return QtCore.QModelIndex()
 
     ################################################################################
     # Overloaded methods
@@ -896,3 +902,22 @@ class TransactionTableModel(QtCore.QAbstractTableModel):
         self._items      = []
         self._draft_item = None
         self._draft_row  = -1
+    
+    def _updateBalances(self, start_row: int, emit_data_changed: bool = True):
+        if start_row == 0:
+            start_balance = decimal.Decimal(0)
+        else:
+            start_balance = self._items[start_row - 1].balance()
+
+        updated = False
+
+        for item in itertools.islice(self._items, start_row, None):
+            start_balance += item.subtransactionTotal(self._account_id)
+            item._balance = start_balance
+
+            updated = True
+
+        if updated and emit_data_changed:
+            column = TransactionTableItem.Column.Balance
+
+            self.dataChanged.emit(self.index(start_row, column), self.index(self.rowCount() - 1, column))

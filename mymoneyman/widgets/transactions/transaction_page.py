@@ -20,6 +20,7 @@ class TransactionPage(QtWidgets.QWidget):
         self._cancel_transaction_btn = QtWidgets.QPushButton(QtGui.QIcon(':/icons/cancel.png'), 'Cancel transaction')
 
         self._insert_transaction_btn.clicked.connect(self._onInsertTransactionButtonClicked)
+        self._remove_transaction_btn.clicked.connect(self._onRemoveTransactionButtonClicked)
         self._cancel_transaction_btn.clicked.connect(self._onCancelTransactionButtonClicked)
 
         self._transactions_table = widgets.TransactionTableWidget()
@@ -61,3 +62,19 @@ class TransactionPage(QtWidgets.QWidget):
     @QtCore.pyqtSlot()
     def _onCancelTransactionButtonClicked(self):
         self._transactions_table.model().discardDraft()
+
+    @QtCore.pyqtSlot()
+    def _onRemoveTransactionButtonClicked(self):
+        current_item = self._transactions_table.currentItem()
+
+        if current_item is None:
+            return
+
+        ret = QtWidgets.QMessageBox.question(
+            self,
+            'Delete Transaction',
+            'You sure to delete the transaction?'
+        )
+
+        if ret == QtWidgets.QMessageBox.StandardButton.Yes:
+            self._transactions_table.model().removeTransaction(current_item.id())

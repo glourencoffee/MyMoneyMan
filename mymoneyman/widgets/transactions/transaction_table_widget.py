@@ -38,6 +38,9 @@ class TransactionTableWidget(QtWidgets.QWidget):
         
         self.setLayout(main_layout)
 
+    def currentItem(self) -> typing.Optional[models.TransactionTableItem]:
+        return self.model().itemFromIndex(self._view.currentIndex())
+
     def model(self) -> models.TransactionTableModel:
         return self._view.model()
 
