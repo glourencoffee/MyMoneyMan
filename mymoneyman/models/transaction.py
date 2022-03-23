@@ -427,10 +427,10 @@ class TransactionTableItem:
             if reference_account_id == sub_item.originAccountId():
                 if   column == Column.Transference: return sub_item.targetAccountName()
                 elif column == Column.Inflow:       return None
-                elif column == Column.Outflow:      return str(sub_item.quantity())
+                elif column == Column.Outflow:      return str(sub_item.quantity()) if sub_item.quantity() != 0 else None
             else:
                 if   column == Column.Transference: return sub_item.originAccountName()
-                elif column == Column.Inflow:       return str(sub_item.quantity())
+                elif column == Column.Inflow:       return str(sub_item.quantity()) if sub_item.quantity() != 0 else None
                 elif column == Column.Outflow:      return None
 
             return None
