@@ -11,6 +11,7 @@ class BalanceTreeItem:
 
     __slots__ = (
         '_id',
+        '_type',
         '_name',
         '_description',
         '_balance',
@@ -20,12 +21,14 @@ class BalanceTreeItem:
 
     def __init__(self,
                  id: int,
+                 type: models.AccountType,
                  name: str,
                  description: str,
                  balance: decimal.Decimal,
                  parent: typing.Optional[BalanceTreeItem]
     ):
         self._id          = id
+        self._type        = type
         self._name        = name
         self._description = description
         self._balance     = balance
@@ -34,6 +37,9 @@ class BalanceTreeItem:
 
     def id(self) -> int:
         return self._id
+
+    def type(self) -> models.AccountType:
+        return self._type
 
     def name(self) -> str:
         return self._name
@@ -109,6 +115,7 @@ class BalanceTreeModel(QtCore.QAbstractItemModel):
             # WITH cte AS (
             #   SELECT a.parent_id    AS parent_id,
             #          a.id           AS id,
+            #          a.type         AS type,
             #          a.name         AS name,
             #          a.description  AS description
             #     FROM subtransaction AS s
@@ -117,20 +124,21 @@ class BalanceTreeModel(QtCore.QAbstractItemModel):
             #    UNION
             #   SELECT a.parent_id    AS parent_id,
             #          a.id           AS id,
+            #          a.type         AS type,
             #          a.name         AS name,
             #          a.description  AS description
             #     FROM subtransaction AS s
             #     JOIN account        AS a ON s.target_id = a.id
             #    WHERE a.type in `account_types`
             # )
-            #    SELECT parent_id, id, name, description,
+            #    SELECT parent_id, id, type, name, description,
             #           (
             #             IFNULL((SELECT SUM(s.quantity) FROM subtransaction AS s WHERE s.target_id = cte.id GROUP BY s.target_id), 0) -
             #             IFNULL((SELECT SUM(s.quantity) FROM subtransaction AS s WHERE s.origin_id = cte.id GROUP BY s.origin_id), 0)
             #           )
             #      FROM cte
             # UNION ALL
-            #    SELECT a.parent_id, a.id, a.name, a.description, 0
+            #    SELECT a.parent_id, a.id, a.type, a.name, a.description, 0
             #      FROM account AS a
             #     WHERE a.type in `account_types`
             #       AND (SELECT COUNT() FROM subtransaction AS t WHERE t.origin_id = a.id) = 0
@@ -170,13 +178,13 @@ class BalanceTreeModel(QtCore.QAbstractItemModel):
 
             cte_stmt = sa.union(
                 (
-                    sa.select(A.parent_id, A.id, A.name, A.description)
+                    sa.select(A.parent_id, A.id, A.type, A.name, A.description)
                       .select_from(S)
                       .join(A, S.origin_id == A.id)
                       .where(A.type.in_(account_types))
                 ),
                 (
-                    sa.select(A.parent_id, A.id, A.name, A.description)
+                    sa.select(A.parent_id, A.id, A.type, A.name, A.description)
                       .select_from(S)
                       .join(A, S.target_id == A.id)
                       .where(A.type.in_(account_types))
@@ -190,7 +198,7 @@ class BalanceTreeModel(QtCore.QAbstractItemModel):
 
             stmt = sa.union_all(
                 (
-                    sa.select(cte.c.parent_id, cte.c.id, cte.c.name, cte.c.description,
+                    sa.select(cte.c.parent_id, cte.c.id, cte.c.type, cte.c.name, cte.c.description,
                               sa.cast(
                                 sa.func.ifnull(target_sum_stmt.scalar_subquery(), 0) -
                                 sa.func.ifnull(origin_sum_stmt.scalar_subquery(), 0),
@@ -200,7 +208,7 @@ class BalanceTreeModel(QtCore.QAbstractItemModel):
                       .select_from(cte)
                 ),
                 (
-                    sa.select(A.parent_id, A.id, A.name, A.description, sa.literal(0))
+                    sa.select(A.parent_id, A.id, A.type, A.name, A.description, sa.literal(0))
                       .where(A.type.in_(account_types))
                       .where(
                           sa.select(sa.func.count())
@@ -217,10 +225,17 @@ class BalanceTreeModel(QtCore.QAbstractItemModel):
                 )
             )
 
-            for t in session.execute(stmt).all():
-                parent_id, id, name, desc, balance = t
+            AccountGroup = models.AccountGroup
 
-                balance_info[parent_id].append((id, name, desc, balance))
+            for t in session.execute(stmt).all():
+                parent_id, id, type, name, desc, balance = t
+                
+                account_group = AccountGroup.fromAccountType(type)
+
+                if account_group in (AccountGroup.Equity, AccountGroup.Income, AccountGroup.Liability):
+                    balance *= -1
+
+                balance_info[parent_id].append((id, type, name, desc, balance))
 
         self.layoutAboutToBeChanged.emit()
         self._resetRootItem()
@@ -232,16 +247,16 @@ class BalanceTreeModel(QtCore.QAbstractItemModel):
                 except KeyError:
                     return
 
-                for id, name, desc, balance in info_list:
-                    child = BalanceTreeItem(id, name, desc, balance, item)
+                for id, type, name, desc, balance in info_list:
+                    child = BalanceTreeItem(id, type, name, desc, balance, item)
                     
                     item.appendChild(child)
                     read_recursive(child)
 
             top_level_list = balance_info.pop(None)
 
-            for id, name, desc, balance in top_level_list:
-                child = BalanceTreeItem(id, name, desc, balance, self._root_item)
+            for id, type, name, desc, balance in top_level_list:
+                child = BalanceTreeItem(id, type, name, desc, balance, self._root_item)
                 read_recursive(child)
 
                 self._root_item.appendChild(child)
@@ -264,7 +279,7 @@ class BalanceTreeModel(QtCore.QAbstractItemModel):
     # Internals
     ################################################################################
     def _resetRootItem(self):
-        self._root_item = BalanceTreeItem(0, '', '', 0, None)
+        self._root_item = BalanceTreeItem(0, models.AccountType.Equity, '', '', 0, None)
 
     ################################################################################
     # Overloaded methods
@@ -315,7 +330,7 @@ class BalanceTreeModel(QtCore.QAbstractItemModel):
             # TODO: maybe move summing logic to query when having to deal with currency rates.
             total_balance = item.balance() + sum(child.balance() for child in item.children())
 
-            return  utils.short_format_number(total_balance, 2)
+            return utils.short_format_number(total_balance, 2)
         else:
             return None
 
