@@ -12,6 +12,7 @@ class TransactionPage(QtWidgets.QWidget):
     
     def _initWidgets(self):
         self._acc_selection_combo = common.AccountBox()
+        self._acc_selection_combo.populate()
         self._acc_selection_combo.currentAccountChanged.connect(self._onCurrentAccountChanged)
 
         self._insert_transaction_btn = QtWidgets.QPushButton(QtGui.QIcon(':/icons/insert.png'), 'Insert transaction')
@@ -24,7 +25,10 @@ class TransactionPage(QtWidgets.QWidget):
         self._transactions_table = widgets.TransactionTableWidget()
         self._transactions_table.model().setInsertable(True)
 
-        self.updateModel(self._acc_selection_combo.currentAccount().id)
+        current_account = self._acc_selection_combo.currentAccount() 
+
+        if current_account is not None:
+            self.updateModel(current_account.id)
     
     def _initLayouts(self):
         buttons_layout = QtWidgets.QHBoxLayout()

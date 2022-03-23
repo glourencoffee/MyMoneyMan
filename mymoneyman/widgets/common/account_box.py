@@ -9,16 +9,13 @@ class AccountBox(QtWidgets.QWidget):
     currentIndexChanged   = QtCore.pyqtSignal(int)
     currentAccountChanged = QtCore.pyqtSignal(AccountData)
 
-    def __init__(self, 
-                 model: models.AccountTreeModel = models.AccountTreeModel(),
-                 parent: typing.Optional[QtWidgets.QWidget] = None
-    ):
+    def __init__(self, parent: typing.Optional[QtWidgets.QWidget] = None):
         super().__init__(parent)
 
         self._initWidgets()
         self._initLayouts()
 
-        self.setModel(model)
+        self.setModel(models.AccountTreeModel())
 
     def _initWidgets(self):
         self._combo_box = QtWidgets.QComboBox()
@@ -33,13 +30,19 @@ class AccountBox(QtWidgets.QWidget):
 
     def setModel(self, model: models.AccountTreeModel):
         self._model = model
+
+    def populate(self, groups: typing.Sequence[models.AccountGroup] = models.AccountGroup.allButEquity()):
+        self.model().select(groups)
+
         self._combo_box.clear()
 
-        groups = models.AccountGroup.allButEquity()
-        model.select(groups)
-
         for group in groups:
-            for child in model.topLevelItem(group).nestedChildren():
+            group_item = self.model().topLevelItem(group)
+
+            if group_item is None:
+                continue
+
+            for child in group_item.nestedChildren():
                 data = AccountBox.AccountData(
                     id            = child.id(),
                     type          = child.type(),
@@ -50,7 +53,7 @@ class AccountBox(QtWidgets.QWidget):
                 self._combo_box.addItem(QtGui.QIcon(), data.extended_name, data)
 
     def setEditable(self, editable: bool):
-        self._combo_box.setEditable(True)
+        self._combo_box.setEditable(editable)
 
     def setCurrentIndex(self, index: int):
         self._combo_box.setCurrentIndex(index)
@@ -71,7 +74,7 @@ class AccountBox(QtWidgets.QWidget):
     def currentIndex(self) -> int:
         return self._combo_box.currentIndex()
 
-    def currentAccount(self) -> AccountData:
+    def currentAccount(self) -> typing.Optional[AccountData]:
         return self._combo_box.currentData()
     
     @QtCore.pyqtSlot(int)

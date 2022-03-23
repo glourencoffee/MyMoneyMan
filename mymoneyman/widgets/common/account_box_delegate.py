@@ -14,9 +14,11 @@ class AccountBoxDelegate(QtWidgets.QStyledItemDelegate):
                      option: QtWidgets.QStyleOptionViewItem,
                      index: QtCore.QModelIndex
     ):
-        editor = common.AccountBox(self._model, parent)
+        editor = common.AccountBox(parent)
+        editor.setModel(self._model)
+        editor.populate()
         editor.setEditable(True)
-
+        
         self.setEditorData(editor, index)
         
         return editor
@@ -28,8 +30,13 @@ class AccountBoxDelegate(QtWidgets.QStyledItemDelegate):
 
     def setModelData(self, editor: common.AccountBox, model: QtCore.QAbstractItemModel, index: QtCore.QModelIndex):
         account_data = editor.currentAccount()
-        account_id   = account_data.id
-        account_name = account_data.extended_name
+
+        if account_data is None:
+            account_id   = None
+            account_name = None
+        else:
+            account_id   = account_data.id
+            account_name = account_data.extended_name
         
         model.setData(index, account_id,   QtCore.Qt.ItemDataRole.EditRole)
         model.setData(index, account_name, QtCore.Qt.ItemDataRole.DisplayRole)
