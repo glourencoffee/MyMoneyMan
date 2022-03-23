@@ -44,6 +44,7 @@ class TransactionPage(QtWidgets.QWidget):
     
     def updateModel(self, account_id: int) -> int:
         self._transactions_table.model().selectAccount(account_id)
+        self._transactions_table.resizeColumnsToContents()
 
     @QtCore.pyqtSlot(common.AccountBox.AccountData)
     def _onCurrentAccountChanged(self, account: common.AccountBox.AccountData):

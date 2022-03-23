@@ -41,6 +41,9 @@ class TransactionTableWidget(QtWidgets.QWidget):
     def model(self) -> models.TransactionTableModel:
         return self._view.model()
 
+    def resizeColumnsToContents(self):
+        self._view.resizeColumnsToContents()
+
     @QtCore.pyqtSlot(QtCore.QModelIndex, QtCore.QModelIndex)
     def _onCurrentRowChanged(self, current: QtCore.QModelIndex, previous: QtCore.QModelIndex):
         if not self.model().hasDraft():
