@@ -18,7 +18,12 @@ class TransactionPage(QtWidgets.QWidget):
         self._remove_transaction_btn = QtWidgets.QPushButton(QtGui.QIcon(':/icons/delete.png'), 'Remove transaction')
         self._cancel_transaction_btn = QtWidgets.QPushButton(QtGui.QIcon(':/icons/cancel.png'), 'Cancel transaction')
 
+        self._insert_transaction_btn.clicked.connect(self._onInsertTransactionButtonClicked)
+        self._cancel_transaction_btn.clicked.connect(self._onCancelTransactionButtonClicked)
+
         self._transactions_table = widgets.TransactionTableWidget()
+        self._transactions_table.model().setInsertable(True)
+
         self.updateModel(self._acc_selection_combo.currentAccount().id)
     
     def _initLayouts(self):
@@ -43,3 +48,11 @@ class TransactionPage(QtWidgets.QWidget):
     @QtCore.pyqtSlot(common.AccountBox.AccountData)
     def _onCurrentAccountChanged(self, account: common.AccountBox.AccountData):
         self.updateModel(account.id)
+
+    @QtCore.pyqtSlot()
+    def _onInsertTransactionButtonClicked(self):
+        self._transactions_table.model().persistDraft()
+
+    @QtCore.pyqtSlot()
+    def _onCancelTransactionButtonClicked(self):
+        self._transactions_table.model().discardDraft()

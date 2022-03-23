@@ -470,6 +470,26 @@ class TransactionTableItem:
     def __repr__(self) -> str:
         return f"TransactionTableItem<id={self._id} type={repr(self.type())} date={repr(self._date)} balance={self._balance}>"
 
+class _InsertableItem(TransactionTableItem):
+    def __init__(self, reference_account_id: int):
+        # FIXME: yeah, this is pretty ugly, having to use placeholder values, but
+        #        what to do?
+        sub_item = SubtransactionItem(0, '', decimal.Decimal(0), reference_account_id, '', ..., 0, '', ...)
+
+        super().__init__(0, datetime.datetime.now(), decimal.Decimal(0), [sub_item])
+
+    def data(self, reference_account_id: int, column: Column, role: int = QtCore.Qt.ItemDataRole.DisplayRole) -> typing.Any:
+        Column = TransactionTableItem.Column
+
+        if role == QtCore.Qt.ItemDataRole.DisplayRole:
+            if column == Column.Type:
+                return '(New)'
+            
+            if column == Column.Balance:
+                return None
+        
+        return super().data(reference_account_id, column, role)
+
 class TransactionTableModel(QtCore.QAbstractTableModel):
     """Implements a model for manipulating transactions on the database."""
 
@@ -478,6 +498,7 @@ class TransactionTableModel(QtCore.QAbstractTableModel):
 
         # TODO: tr()
         self._columns = ('Type', 'Date', 'Comment', 'Transference', 'Inflow', 'Outflow', 'Balance')
+        self._insertable_item = None
         self._reset(None)
 
     def selectAccount(self, account_id: int, extended_name_sep: str = ':'):
@@ -604,7 +625,9 @@ class TransactionTableModel(QtCore.QAbstractTableModel):
                 transactions[(tra_id, tra_date)].append(sub_item)
         
         self.layoutAboutToBeChanged.emit()
+        
         self._reset(account_id)
+        self._insertable_item = _InsertableItem(account_id)
 
         balance = decimal.Decimal(0)
 
@@ -657,38 +680,66 @@ class TransactionTableModel(QtCore.QAbstractTableModel):
         if not self.hasDraft():
             return False
 
-        item = self._draft_item
+        item      = self._draft_item
+        is_insert = item is self._insertable_item
 
         with models.sql.get_session() as session:
-            session.execute(
-                sa.update(Transaction)
-                  .where(Transaction.id == item.id())
-                  .values(date=item.date())
-            )
+            if is_insert:
+                subtransactions = []
 
-            sub_item = item.subtransactionItems()[0]
+                for sub_item in item.subtransactionItems():
+                    s = Subtransaction(
+                        comment   = sub_item.comment(),
+                        origin_id = sub_item.originAccountId(),
+                        target_id = sub_item.targetAccountId(),
+                        quantity  = sub_item.quantity()
+                    )
+                    
+                    subtransactions.append(s)
+                    session.add(s)
 
-            session.execute(
-                sa.update(Subtransaction)
-                  .where(Subtransaction.id == sub_item.id())
-                  .values(
-                      comment   = sub_item.comment(),
-                      origin_id = sub_item.originAccountId(),
-                      target_id = sub_item.targetAccountId(),
-                      quantity  = sub_item.quantity()
-                  )
-            )
+                t = Transaction(date=item.date(), subtransactions=subtransactions)
+                session.add(t)
+            else:
+                session.execute(
+                    sa.update(Transaction)
+                      .where(Transaction.id == item.id())
+                      .values(date=item.date())
+                )
+
+                for sub_item in item.subtransactionItems():
+                    session.execute(
+                        sa.update(Subtransaction)
+                          .where(Subtransaction.id == sub_item.id())
+                          .values(
+                            comment   = sub_item.comment(),
+                            origin_id = sub_item.originAccountId(),
+                            target_id = sub_item.targetAccountId(),
+                            quantity  = sub_item.quantity()
+                          )
+                    )
 
             session.commit()
 
         row = self._draft_row
 
         # Reflect updates to the database on the model.
-        self._items[row] = item
-        self._draft_item = None    
-        self._draft_row  = -1
+        if is_insert:
+            self.layoutAboutToBeChanged.emit()
 
-        self.dataChanged.emit(self.index(row, 0), self.index(row, self.columnCount() - 1))
+            self._items.append(item.copy())
+            self._insertable_item = _InsertableItem(self._account_id)
+            self._draft_item      = None
+            self._draft_row       = -1
+
+            self.layoutChanged.emit()
+        else:
+            self._items[row] = item
+            self._draft_item = None
+            self._draft_row  = -1
+
+            self.dataChanged.emit(self.index(row, 0), self.index(row, self.columnCount() - 1))
+
         self.updateBalances(row)
 
         return True
@@ -699,11 +750,30 @@ class TransactionTableModel(QtCore.QAbstractTableModel):
 
         row = self._draft_row
 
+        if self._draft_item is self._insertable_item:
+            self._insertable_item = _InsertableItem(self._account_id)
+
         self._draft_item = None
         self._draft_row  = -1
         self.dataChanged.emit(self.index(row, 0), self.index(row, self.columnCount() - 1))
 
         return True
+
+    def setInsertable(self, insertable: bool):
+        if self.insertable() == insertable:
+            return
+
+        self.layoutAboutToBeChanged.emit()
+
+        if insertable:
+            self._insertable_item = _InsertableItem(self._account_id)
+        else:
+            self._insertable_item = None
+
+        self.layoutChanged.emit()
+
+    def insertable(self) -> bool:
+        return self._insertable_item is not None
 
     def updateBalances(self, start_row: int):
         if start_row == 0:
@@ -735,16 +805,20 @@ class TransactionTableModel(QtCore.QAbstractTableModel):
     ################################################################################
     def data(self, index: QtCore.QModelIndex, role: int = QtCore.Qt.ItemDataRole.DisplayRole) -> typing.Any:
         if self._account_id is None:
-            return False
+            return None
         
         row = index.row()
-        col = TransactionTableItem.Column(index.column())
-
-        item: TransactionTableItem = self._items[row]
-
-        if self._draft_item is not None and self._draft_item.id() == item.id():
+        
+        if self._draft_item is not None and self._draft_row == row:
             # If there's a draft for item at `row`, show draft instead.
             item = self._draft_item
+        else:
+            try:
+                item: TransactionTableItem = self._items[row]
+            except IndexError:
+                item = self._insertable_item
+
+        col = TransactionTableItem.Column(index.column())
 
         return item.data(self._account_id, col, role)
 
@@ -753,19 +827,23 @@ class TransactionTableModel(QtCore.QAbstractTableModel):
             return False
 
         row = index.row()
-        item: TransactionTableItem = self._items[row]
+        
+        try:
+            item: TransactionTableItem = self._items[row]
+        except IndexError:
+            item = self._insertable_item
 
         is_new_draft = False
 
         if not self.hasDraft():
-            # If there's no editing going on, that is, no draft, then start a new one.
-            self._draft_item = item.copy()
+            # There's no editing going on, that is, no draft, so start a new one.
+            self._draft_item = item if item is self._insertable_item else item.copy()
             self._draft_row  = row
             is_new_draft     = True
 
-        elif self._draft_item.id() != item.id():
-            # If a draft exists for an item which is not the current one being edited,
-            # ignore the editing request.
+        elif self._draft_row != row:
+            # A draft exists for an item which is not the current one being edited,
+            # so ignore the editing request.
             return False
 
         col = TransactionTableItem.Column(index.column())
@@ -805,7 +883,7 @@ class TransactionTableModel(QtCore.QAbstractTableModel):
         return None
 
     def rowCount(self, parent: QtCore.QModelIndex = QtCore.QModelIndex()) -> int:
-        return len(self._items)
+        return len(self._items) + int(self.insertable())
 
     def columnCount(self, parent: QtCore.QModelIndex = QtCore.QModelIndex()) -> int:
         return len(self._columns)
