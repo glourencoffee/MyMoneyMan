@@ -20,6 +20,7 @@ class AccountBox(QtWidgets.QWidget):
     def _initWidgets(self):
         self._combo_box = QtWidgets.QComboBox()
         self._combo_box.currentIndexChanged.connect(self._onCurrentIndexChanged)
+        self._combo_box.setEditable(False)
 
     def _initLayouts(self):
         main_layout = QtWidgets.QVBoxLayout()
@@ -54,6 +55,20 @@ class AccountBox(QtWidgets.QWidget):
 
     def setEditable(self, editable: bool):
         self._combo_box.setEditable(editable)
+
+        if editable:
+            # `QComboBox.lineEdit()` is only valid after a combo box is made editable.
+            # This is because non-editable combo boxes don't have a `QLineEdit` at all.
+            #
+            # Once the `QLineEdit` is created for the combo, redirect the focus from
+            # `self` to the line edit, so that upon hitting Tab, for instance, focus
+            # will be set on the line edit rather than on `self`.
+            #
+            # https://stackoverflow.com/questions/12145522/why-pressing-of-tab-key-emits-only-qeventshortcutoverride-event
+            self.setFocusProxy(self._combo_box.lineEdit())
+        else:
+            # Otherwise, redirect focus to the combo.
+            self.setFocusProxy(self._combo_box)
 
     def setCurrentIndex(self, index: int):
         self._combo_box.setCurrentIndex(index)
