@@ -1,5 +1,5 @@
 import typing
-from PyQt5      import QtCore, QtWidgets
+from PyQt5      import QtCore, QtGui, QtWidgets
 from mymoneyman import models
 from mymoneyman.widgets import common
 
@@ -32,6 +32,11 @@ class TransactionTableWidget(QtWidgets.QWidget):
 
         self._view.selectionModel().currentRowChanged.connect(self._onCurrentRowChanged)
 
+        p = self.palette()
+        p.setColor(QtGui.QPalette.ColorRole.Highlight,       QtGui.QColor('#48aa99'))
+        p.setColor(QtGui.QPalette.ColorRole.HighlightedText, QtCore.Qt.white)
+        self.setPalette(p)
+
     def _initLayouts(self):
         main_layout = QtWidgets.QVBoxLayout()
         main_layout.addWidget(self._view)
@@ -49,18 +54,44 @@ class TransactionTableWidget(QtWidgets.QWidget):
 
     @QtCore.pyqtSlot(QtCore.QModelIndex, QtCore.QModelIndex)
     def _onCurrentRowChanged(self, current: QtCore.QModelIndex, previous: QtCore.QModelIndex):
+        # TODO:
+        # The way this method works is a reproduction of the one employed by GnuCash. It
+        # works by "locking" the table view if any change is made to any row (that is, a
+        # "draft transaction" is started). Then, if the user changes the current row, he
+        # is prompted with a popup window that gives him three options: to discard changes,
+        # to continue edition, or to persist changes. If he chooses to discard or to persist
+        # changes, then the corresponding operation is executed and the table view gets
+        # "unlocked." Otherwise, if he decides to continue edition, the draft transaction
+        # is kept unchanged and the draft row is reselected.
+        #
+        # Now, I don't know if this is the best way to handle transaction changes. An
+        # alternative would be blocking edition directly in the model, but that could
+        # be frustrating to the user, as he would be unable to do much... I'll leave
+        # it as is for now until I figure out something better.
+
         if not self.model().hasDraft():
             return
 
-        ret = QtWidgets.QMessageBox.question(
-            self,
-            'Transaction Modified',
-            'The previously selected transaction was modified. Do you wish to save the changes?'
-        )
+        msg_box = QtWidgets.QMessageBox()
+        msg_box.setWindowTitle('Save modified transaction?')
+        msg_box.setText('The current transaction was modified. What do you want to do?')
         
-        if ret == QtWidgets.QMessageBox.StandardButton.Yes:
-            print('persisting changes')
-            self.model().persistDraft()
-        else:
-            print('discarding changes')
+        discard_button  = msg_box.addButton('Discard changes',  QtWidgets.QMessageBox.ButtonRole.ResetRole)
+        continue_button = msg_box.addButton('Continue edition', QtWidgets.QMessageBox.ButtonRole.NoRole)
+        persist_button  = msg_box.addButton('Persist changes',  QtWidgets.QMessageBox.ButtonRole.ApplyRole)
+
+        msg_box.exec()
+
+        clicked_button = msg_box.clickedButton()
+        
+        if clicked_button == discard_button:
             self.model().discardDraft()
+        elif clicked_button == continue_button:
+            def selectPreviousRow():
+                self._view.selectionModel().currentRowChanged.disconnect(self._onCurrentRowChanged)
+                self._view.setCurrentIndex(previous)
+                self._view.selectionModel().currentRowChanged.connect(self._onCurrentRowChanged)
+
+            QtCore.QTimer.singleShot(0.00001, selectPreviousRow)
+        elif clicked_button == persist_button:
+            self.model().persistDraft()
