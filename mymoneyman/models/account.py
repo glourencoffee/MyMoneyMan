@@ -294,11 +294,11 @@ class AccountTreeModel(QtCore.QAbstractItemModel):
 
             return result[0]
 
-    def addAccount(self, name: str, type: AccountType, description: str, parent_id: typing.Optional[int]) -> bool:
+    def addAccount(self, name: str, type: AccountType, description: str, parent_id: typing.Optional[int]) -> int:
         """TODO"""
 
         if self.hasAccount(name, type, parent_id):
-            return False
+            return -1
 
         with models.sql.get_session() as session:
             acc = Account(
@@ -328,7 +328,7 @@ class AccountTreeModel(QtCore.QAbstractItemModel):
 
             self.layoutChanged.emit()
 
-            return True
+            return acc.id
 
     def removeAccount(self, id: int) -> bool:
         """Removes an account from the database given its id."""
