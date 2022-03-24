@@ -5,6 +5,10 @@ from mymoneyman.widgets import accounts as widgets
 from mymoneyman         import models
 
 class AccountPage(QtWidgets.QWidget):
+    accountCreated = QtCore.pyqtSignal(int)
+    accountDeleted = QtCore.pyqtSignal(int)
+    accountEdited  = QtCore.pyqtSignal(int)
+
     def __init__(self, parent: typing.Optional[QtWidgets.QWidget] = None):
         super().__init__(parent)
 
@@ -62,6 +66,8 @@ class AccountPage(QtWidgets.QWidget):
 
             self._balance_box.updateBalances(account_group)
             self._balance_box.expandAll()
+            
+            self.accountCreated.emit(dialog.accountId())
 
     @QtCore.pyqtSlot()
     def _onDelAccountAction(self):
@@ -80,6 +86,8 @@ class AccountPage(QtWidgets.QWidget):
 
             self._balance_box.updateBalances(account_group)
             self._balance_box.expandAll()
+            
+            self.accountDeleted.emit(selected_item.id())
     
     @QtCore.pyqtSlot()
     def _onEditAccountAction(self):
@@ -98,6 +106,8 @@ class AccountPage(QtWidgets.QWidget):
 
             self._balance_box.updateBalances(account_group)
             self._balance_box.expandAll()
+
+            self.accountEdited.emit(selected_item.id())
     
     @QtCore.pyqtSlot(widgets.AccountTreeWidget, models.AccountTreeItem)
     def _onCurrentTreeItemChanged(self, tree: widgets.AccountTreeWidget, item: models.AccountTreeItem):

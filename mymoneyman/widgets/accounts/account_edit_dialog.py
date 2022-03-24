@@ -16,7 +16,9 @@ class AccountEditDialog(QtWidgets.QDialog):
     def __init__(self, mode: EditionMode, parent: typing.Optional[QtWidgets.QWidget] = None):
         super().__init__(parent)
 
-        self._mode = mode
+        self._mode       = mode
+        self._account_id = -1
+
         self._initWidgets()
         self._initLayouts()
 
@@ -105,6 +107,9 @@ class AccountEditDialog(QtWidgets.QDialog):
     def setDescription(self, text: str):
         self._desc_edit.setText(text)
 
+    def accountId(self) -> int:
+        return self._account_id
+
     def accountType(self) -> models.AccountType:
         return self._currentGroupData().account_type
     
@@ -149,12 +154,11 @@ class AccountEditDialog(QtWidgets.QDialog):
 
                 QtWidgets.QMessageBox.information(self, 'Account exists', description)
             else:
-                print('insert account (name:', account_name, 'type:', account_type, 'parent id:', parent_id, ')')
+                self._account_id = model.addAccount(account_name, account_type, account_desc, parent_id)
 
-                if model.addAccount(account_name, account_type, account_desc, parent_id):
+                if self._account_id != -1:
                     self.accept()
                 else:
-                    print('rejecting...')
                     self.reject()
         else:
             # TODO
