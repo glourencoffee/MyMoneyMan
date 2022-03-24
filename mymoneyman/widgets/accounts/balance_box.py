@@ -6,6 +6,7 @@ from mymoneyman         import models
 
 class BalanceBox(QtWidgets.QWidget):
     currentChanged = QtCore.pyqtSignal(widgets.BalanceTreeWidget, models.BalanceTreeItem)
+    doubleClicked = QtCore.pyqtSignal(widgets.BalanceTreeWidget, models.BalanceTreeItem)
 
     def __init__(self, parent: typing.Optional[QtWidgets.QWidget] = None):
         super().__init__(parent)
@@ -19,21 +20,25 @@ class BalanceBox(QtWidgets.QWidget):
         self._asset_tree.setTitle('Assets')
         self._asset_tree.setGroup(models.AccountGroup.Asset)
         self._asset_tree.currentChanged.connect(functools.partial(self._onTreeCurrentChanged, self._asset_tree))
+        self._asset_tree.doubleClicked.connect(functools.partial(self._onTreeDoubleClicked, self._asset_tree))
 
         self._liability_tree = widgets.BalanceTreeWidget()
         self._liability_tree.setTitle('Liabilities')
         self._liability_tree.setGroup(models.AccountGroup.Liability)
         self._liability_tree.currentChanged.connect(functools.partial(self._onTreeCurrentChanged, self._liability_tree))
+        self._liability_tree.doubleClicked.connect(functools.partial(self._onTreeDoubleClicked, self._liability_tree))
 
         self._income_tree = widgets.BalanceTreeWidget()
         self._income_tree.setTitle('Income')
         self._income_tree.setGroup(models.AccountGroup.Income)
         self._income_tree.currentChanged.connect(functools.partial(self._onTreeCurrentChanged, self._income_tree))
+        self._income_tree.doubleClicked.connect(functools.partial(self._onTreeDoubleClicked, self._income_tree))
 
         self._expense_tree = widgets.BalanceTreeWidget()
         self._expense_tree.setTitle('Expenses')
         self._expense_tree.setGroup(models.AccountGroup.Expense)
         self._expense_tree.currentChanged.connect(functools.partial(self._onTreeCurrentChanged, self._expense_tree))
+        self._expense_tree.doubleClicked.connect(functools.partial(self._onTreeDoubleClicked, self._expense_tree))
 
         self._selected_tree = None
 
@@ -151,3 +156,7 @@ class BalanceBox(QtWidgets.QWidget):
         self._selected_tree = tree
 
         self.currentChanged.emit(tree, item)
+
+    @QtCore.pyqtSlot(models.BalanceTreeItem)
+    def _onTreeDoubleClicked(self, tree: widgets.BalanceTreeWidget, item: models.BalanceTreeItem):
+        self.doubleClicked.emit(tree, item)

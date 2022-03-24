@@ -4,6 +4,7 @@ from mymoneyman import models, utils
 
 class BalanceTreeWidget(QtWidgets.QWidget):
     currentChanged = QtCore.pyqtSignal(models.BalanceTreeItem)
+    doubleClicked = QtCore.pyqtSignal(models.BalanceTreeItem)
 
     def __init__(self, parent: typing.Optional[QtWidgets.QWidget] = None):
         super().__init__(parent)
@@ -24,8 +25,10 @@ class BalanceTreeWidget(QtWidgets.QWidget):
         self._view.setModel(models.BalanceTreeModel())
         self._view.setSelectionMode(QtWidgets.QTreeView.SelectionMode.SingleSelection)
         self._view.setSelectionBehavior(QtWidgets.QTreeView.SelectionBehavior.SelectRows)
-        self._view.selectionModel().currentRowChanged.connect(self._onCurrentRowChanged)
         self._view.setFont(QtGui.QFont('IPAPGothic', 11))
+
+        self._view.selectionModel().currentRowChanged.connect(self._onCurrentRowChanged)
+        self._view.doubleClicked.connect(self._onIndexDoubleClicked)
 
         self._group = None
 
@@ -86,3 +89,10 @@ class BalanceTreeWidget(QtWidgets.QWidget):
 
         if item is not None:
             self.currentChanged.emit(item)
+
+    @QtCore.pyqtSlot(QtCore.QModelIndex)
+    def _onIndexDoubleClicked(self, index: QtCore.QModelIndex):
+        item = self.model().itemFromIndex(index)
+
+        if item is not None:
+            self.doubleClicked.emit(item)

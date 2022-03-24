@@ -5,9 +5,10 @@ from mymoneyman.widgets import accounts as widgets
 from mymoneyman         import models
 
 class AccountPage(QtWidgets.QWidget):
-    accountCreated = QtCore.pyqtSignal(int)
-    accountDeleted = QtCore.pyqtSignal(int)
-    accountEdited  = QtCore.pyqtSignal(int)
+    accountCreated       = QtCore.pyqtSignal(int)
+    accountDeleted       = QtCore.pyqtSignal(int)
+    accountEdited        = QtCore.pyqtSignal(int)
+    accountDoubleClicked = QtCore.pyqtSignal(int)
 
     def __init__(self, parent: typing.Optional[QtWidgets.QWidget] = None):
         super().__init__(parent)
@@ -22,6 +23,7 @@ class AccountPage(QtWidgets.QWidget):
         self._balance_box = widgets.BalanceBox()
         self._balance_box.expandAll()
         self._balance_box.currentChanged.connect(self._onCurrentTreeItemChanged)
+        self._balance_box.doubleClicked.connect(self._onTreeDoubleClicked)
 
     def _initToolBar(self):
         self._tool_bar = QtWidgets.QToolBar()
@@ -113,3 +115,10 @@ class AccountPage(QtWidgets.QWidget):
     def _onCurrentTreeItemChanged(self, tree: widgets.AccountTreeWidget, item: models.AccountTreeItem):
         self._del_account_action.setEnabled(True)
         self._edit_account_action.setEnabled(True)
+    
+    @QtCore.pyqtSlot(widgets.AccountTreeWidget, models.AccountTreeItem)
+    def _onTreeDoubleClicked(self, tree: widgets.AccountTreeWidget, item: models.AccountTreeItem):
+        account_id = item.id()
+
+        if account_id is not None:
+            self.accountDoubleClicked.emit(account_id)
