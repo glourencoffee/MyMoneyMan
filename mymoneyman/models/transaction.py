@@ -501,6 +501,15 @@ class TransactionTableModel(QtCore.QAbstractTableModel):
         self._insertable_item = None
         self._reset(None)
 
+    def reset(self):
+        self.beginResetModel()
+        self._reset(None)
+
+        if self.insertable():
+            self._insertable_item = _InsertableItem(-1)
+
+        self.endResetModel()
+
     def selectAccount(self, account_id: int, extended_name_sep: str = ':'):
         transactions = collections.defaultdict(list)
 
