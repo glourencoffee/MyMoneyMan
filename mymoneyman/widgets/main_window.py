@@ -12,6 +12,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self._account_page.accountCreated.connect(self._onAccountCreated)
         self._account_page.accountDeleted.connect(self._onAccountDeleted)
         self._account_page.accountEdited.connect(self._onAccountEdited)
+        self._account_page.accountDoubleClicked.connect(self._onAccountDoubleClicked)
 
         self._transaction_page = transactions.TransactionPage()
 
@@ -33,3 +34,8 @@ class MainWindow(QtWidgets.QMainWindow):
     @QtCore.pyqtSlot(int)
     def _onAccountEdited(self, account_id: int):
         self._transaction_page.refresh()
+
+    @QtCore.pyqtSlot(int)
+    def _onAccountDoubleClicked(self, account_id: int):
+        self._transaction_page.selectAccount(account_id)
+        self._pages.setCurrentWidget(self._transaction_page)

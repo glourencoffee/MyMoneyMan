@@ -55,9 +55,14 @@ class TransactionPage(QtWidgets.QWidget):
         if current_account is not None:
             self._acc_selection_combo.setCurrentAccount(current_account.id)
 
-    def selectAccount(self, account_id: typing.Optional[int]) -> int:
-        self._transactions_table.model().selectAccount(account_id)
-        self._transactions_table.resizeColumnsToContents()
+    def selectAccount(self, account_id: typing.Optional[int]):
+        if account_id is None:
+            self._acc_selection_combo.setCurrentIndex(-1)
+            self._transactions_table.model().reset()
+        else:
+            self._acc_selection_combo.setCurrentAccount(account_id)
+            self._transactions_table.model().selectAccount(account_id)
+            self._transactions_table.resizeColumnsToContents()
 
     @QtCore.pyqtSlot(int)
     def _onCurrentIndexChanged(self, index: int):
