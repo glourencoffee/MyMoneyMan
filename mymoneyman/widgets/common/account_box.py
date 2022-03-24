@@ -6,8 +6,7 @@ from mymoneyman import models
 class AccountBox(QtWidgets.QWidget):
     AccountData = collections.namedtuple('AccountData', ['id', 'type', 'name', 'extended_name'])
 
-    currentIndexChanged   = QtCore.pyqtSignal(int)
-    currentAccountChanged = QtCore.pyqtSignal(AccountData)
+    currentIndexChanged = QtCore.pyqtSignal(int)
 
     def __init__(self, parent: typing.Optional[QtWidgets.QWidget] = None):
         super().__init__(parent)
@@ -94,7 +93,4 @@ class AccountBox(QtWidgets.QWidget):
     
     @QtCore.pyqtSlot(int)
     def _onCurrentIndexChanged(self, index: int):
-        account_data = self._combo_box.itemData(index)
-
         self.currentIndexChanged.emit(index)
-        self.currentAccountChanged.emit(account_data)

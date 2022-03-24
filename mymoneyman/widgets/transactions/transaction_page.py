@@ -13,7 +13,7 @@ class TransactionPage(QtWidgets.QWidget):
     def _initWidgets(self):
         self._acc_selection_combo = common.AccountBox()
         self._acc_selection_combo.populate()
-        self._acc_selection_combo.currentAccountChanged.connect(self._onCurrentAccountChanged)
+        self._acc_selection_combo.currentIndexChanged.connect(self._onCurrentIndexChanged)
 
         self._insert_transaction_btn = QtWidgets.QPushButton(QtGui.QIcon(':/icons/insert.png'), 'Insert transaction')
         self._remove_transaction_btn = QtWidgets.QPushButton(QtGui.QIcon(':/icons/delete.png'), 'Remove transaction')
@@ -26,10 +26,10 @@ class TransactionPage(QtWidgets.QWidget):
         self._transactions_table = widgets.TransactionTableWidget()
         self._transactions_table.model().setInsertable(True)
 
-        current_account = self._acc_selection_combo.currentAccount() 
-
-        if current_account is not None:
-            self.updateModel(current_account.id)
+        account    = self._acc_selection_combo.currentAccount() 
+        account_id = account.id if account is not None else None
+        
+        self.selectAccount(account_id)
     
     def _initLayouts(self):
         buttons_layout = QtWidgets.QHBoxLayout()
@@ -47,13 +47,24 @@ class TransactionPage(QtWidgets.QWidget):
         main_layout.addWidget(self._transactions_table)
         self.setLayout(main_layout)
     
-    def updateModel(self, account_id: int) -> int:
+    def refresh(self):
+        current_account = self._acc_selection_combo.currentAccount()
+
+        self._acc_selection_combo.populate()
+
+        if current_account is not None:
+            self._acc_selection_combo.setCurrentAccount(current_account.id)
+
+    def selectAccount(self, account_id: typing.Optional[int]) -> int:
         self._transactions_table.model().selectAccount(account_id)
         self._transactions_table.resizeColumnsToContents()
 
-    @QtCore.pyqtSlot(common.AccountBox.AccountData)
-    def _onCurrentAccountChanged(self, account: common.AccountBox.AccountData):
-        self.updateModel(account.id)
+    @QtCore.pyqtSlot(int)
+    def _onCurrentIndexChanged(self, index: int):
+        account    = self._acc_selection_combo.currentAccount()
+        account_id = account.id if account is not None else None
+        
+        self.selectAccount(account_id)
 
     @QtCore.pyqtSlot()
     def _onInsertTransactionButtonClicked(self):
