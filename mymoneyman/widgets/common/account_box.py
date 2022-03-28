@@ -80,6 +80,8 @@ class AccountBox(QtWidgets.QWidget):
                 self._combo_box.setCurrentIndex(index)
                 return True
 
+        self.setCurrentIndex(-1)
+
         return False
 
     def model(self) -> models.AccountTreeModel:
