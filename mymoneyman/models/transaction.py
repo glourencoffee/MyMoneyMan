@@ -415,7 +415,7 @@ class TransactionTableItem:
         Column = TransactionTableItem.Column
 
         if   column == Column.Type:    return self.type().name
-        elif column == Column.Date:    return str(self.date())
+        elif column == Column.Date:    return QtCore.QDateTime(self.date()).toString('dd/MM/yyyy hh:mm:ss') # FIXME: let format be customizable
         elif column == Column.Balance: return str(self.balance())
         else:
             if self.isSplit():
@@ -478,7 +478,7 @@ class _InsertableItem(TransactionTableItem):
         #        what to do?
         sub_item = SubtransactionItem(0, '', decimal.Decimal(0), reference_account_id, '', ..., 0, '', ...)
 
-        super().__init__(0, datetime.datetime.now(), decimal.Decimal(0), [sub_item])
+        super().__init__(0, QtCore.QDateTime.currentDateTime().toPyDateTime(), decimal.Decimal(0), [sub_item])
 
     def data(self, reference_account_id: int, column: Column, role: int = QtCore.Qt.ItemDataRole.DisplayRole) -> typing.Any:
         Column = TransactionTableItem.Column
