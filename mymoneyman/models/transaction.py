@@ -518,6 +518,8 @@ class TransactionTableModel(QtCore.QAbstractTableModel):
     an active draft transaction, call `hasDraft()`.
     """
 
+    draftStateChanged = QtCore.pyqtSignal(bool)
+
     def __init__(self, parent: typing.Optional[QtCore.QObject] = None):
         super().__init__(parent)
 
@@ -814,6 +816,7 @@ class TransactionTableModel(QtCore.QAbstractTableModel):
 
             self.dataChanged.emit(self.index(row, 0), self.index(row, self.columnCount() - 1))
 
+        self.draftStateChanged.emit(False)
         self._updateBalances(row)
 
         return True
@@ -830,6 +833,7 @@ class TransactionTableModel(QtCore.QAbstractTableModel):
         self._draft_item = None
         self._draft_row  = -1
         self.dataChanged.emit(self.index(row, 0), self.index(row, self.columnCount() - 1))
+        self.draftStateChanged.emit(False)
 
         return True
 
@@ -925,6 +929,10 @@ class TransactionTableModel(QtCore.QAbstractTableModel):
 
         if self._draft_item.setData(self._account_id, col, value, role):
             self.dataChanged.emit(self.index(row, 0), self.index(row, self.columnCount() - 1))
+
+            if is_new_draft:
+                self.draftStateChanged.emit(True)
+
             return True
         
         # This check is for the case a draft was created for the first time, but there was

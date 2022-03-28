@@ -19,12 +19,16 @@ class TransactionPage(QtWidgets.QWidget):
         self._remove_transaction_btn = QtWidgets.QPushButton(QtGui.QIcon(':/icons/delete.png'), 'Remove transaction')
         self._cancel_transaction_btn = QtWidgets.QPushButton(QtGui.QIcon(':/icons/cancel.png'), 'Cancel transaction')
 
+        self._insert_transaction_btn.setEnabled(False)
+        self._cancel_transaction_btn.setEnabled(False)
+
         self._insert_transaction_btn.clicked.connect(self._onInsertTransactionButtonClicked)
         self._remove_transaction_btn.clicked.connect(self._onRemoveTransactionButtonClicked)
         self._cancel_transaction_btn.clicked.connect(self._onCancelTransactionButtonClicked)
 
         self._transactions_table = widgets.TransactionTableWidget()
         self._transactions_table.model().setInsertable(True)
+        self._transactions_table.model().draftStateChanged.connect(self._onDraftStateChanged)
 
         account    = self._acc_selection_combo.currentAccount() 
         account_id = account.id if account is not None else None
@@ -70,6 +74,11 @@ class TransactionPage(QtWidgets.QWidget):
         account_id = account.id if account is not None else None
         
         self.selectAccount(account_id)
+
+    @QtCore.pyqtSlot(bool)
+    def _onDraftStateChanged(self, has_draft: bool):
+        self._insert_transaction_btn.setEnabled(has_draft)
+        self._cancel_transaction_btn.setEnabled(has_draft)
 
     @QtCore.pyqtSlot()
     def _onInsertTransactionButtonClicked(self):
