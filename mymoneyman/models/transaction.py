@@ -214,6 +214,8 @@ class SubtransactionItem:
         )
 
 class TransactionTableItem:
+    """Stores information of a transaction on `TransactionTableModel`."""
+
     __slots__ = ('_id', '_date', '_balance', '_sub_items')
     
     class Column(enum.IntEnum):
@@ -491,7 +493,30 @@ class _InsertableItem(TransactionTableItem):
         return super().data(reference_account_id, column, role)
 
 class TransactionTableModel(QtCore.QAbstractTableModel):
-    """Implements a model for manipulating transactions on the database."""
+    """Implements a model for manipulating transactions on the database.
+    
+    This class is designed to work with one account at a time. As such, it only
+    deals with transaction operations for that account. The id of the associated
+    account, if any, is given by `accountId()`.
+
+    The method `selectAccount()` retrieves transactions related to a particular
+    account and stores them in the model. Information about each transaction may
+    be accessed by calling `data()`, or changed by calling `setData()`.
+
+    Beside an account's transactions, this class also provides the ability to
+    insert transactions on the associated account. An instance of this class can
+    be made insertable or non-insertable by calling `setInsertable()`.
+    
+    An insertable model will enable a *draft row*, which is a row that allows a
+    draft transaction to be created.
+    
+    A *draft transaction* is a non-persisted transaction that may be accessed and
+    modified with `data()` and `setData()`, respectively, as with any transaction.
+    However, a draft transaction is NOT persisted until `persistDraft()` is called.
+    A draft transaction may also be discard with `discardDraft()`, in which case a
+    draft row will be reset to its original state. To check whether this model has
+    an active draft transaction, call `hasDraft()`.
+    """
 
     def __init__(self, parent: typing.Optional[QtCore.QObject] = None):
         super().__init__(parent)
@@ -502,6 +527,11 @@ class TransactionTableModel(QtCore.QAbstractTableModel):
         self._reset(None)
 
     def reset(self):
+        """Dissociates this model from an account, if any."""
+
+        if self._account_id is None:
+            return
+
         self.beginResetModel()
         self._reset(None)
 
@@ -510,7 +540,17 @@ class TransactionTableModel(QtCore.QAbstractTableModel):
 
         self.endResetModel()
 
+    def accountId(self) -> typing.Optional[int]:
+        """
+        Returns the id of the account which this model is associated with,
+        or `None` if this model is not associated with any account.
+        """
+
+        return self._account_id
+
     def selectAccount(self, account_id: int, extended_name_sep: str = ':'):
+        """Retrieves transactions from the account whose id is `account_id`."""
+
         transactions = collections.defaultdict(list)
 
         with models.sql.get_session() as session:
@@ -686,6 +726,15 @@ class TransactionTableModel(QtCore.QAbstractTableModel):
         return self._draft_item is not None
 
     def removeTransaction(self, transaction_id: int):
+        """Removes a transaction from the database given its id.
+        
+        This method removes the referred transaction without checking whether it belongs
+        to the account associated with this model.
+
+        However, if the transaction does belong to the associated account, then that
+        transaction is removed from this model after it's deleted from the database.
+        """
+
         with models.sql.get_session() as session:
             t = session.query(Transaction).filter_by(id=transaction_id).first()
 
@@ -785,6 +834,8 @@ class TransactionTableModel(QtCore.QAbstractTableModel):
         return True
 
     def setInsertable(self, insertable: bool):
+        """Enables or disables draft transactions on this model."""
+
         if self.insertable() == insertable:
             return
 
@@ -798,15 +849,24 @@ class TransactionTableModel(QtCore.QAbstractTableModel):
         self.layoutChanged.emit()
 
     def insertable(self) -> bool:
+        """Returns whether this model allows draft transactions."""
+
         return self._insertable_item is not None
 
     def itemFromIndex(self, index: QtCore.QModelIndex) -> typing.Optional[TransactionTableItem]:
+        """Returns the transaction item at `index`, or `None` if `index` is invalid."""
+
         if not index.isValid():
             return None
 
         return self._items[index.row()]
 
     def indexFromId(self, transaction_id: int) -> QtCore.QModelIndex:
+        """
+        Returns the index for the transaction identified by `transaction_id`,
+        or an invalid index is there's no such transaction in this model.
+        """
+
         for row in range(self.rowCount()):
             item = self._items[row]
 
