@@ -727,7 +727,7 @@ class TransactionTableModel(QtCore.QAbstractTableModel):
     def hasDraft(self) -> bool:
         return self._draft_item is not None
 
-    def removeTransaction(self, transaction_id: int):
+    def removeTransaction(self, transaction_id: int) -> bool:
         """Removes a transaction from the database given its id.
         
         This method removes the referred transaction without checking whether it belongs
@@ -735,10 +735,15 @@ class TransactionTableModel(QtCore.QAbstractTableModel):
 
         However, if the transaction does belong to the associated account, then that
         transaction is removed from this model after it's deleted from the database.
+
+        Returns `True` if a transaction was deleted, and `False` otherwise.
         """
 
         with models.sql.get_session() as session:
             t = session.query(Transaction).filter_by(id=transaction_id).first()
+
+            if t is None:
+                return False
 
             session.delete(t)
             session.commit()
@@ -746,79 +751,43 @@ class TransactionTableModel(QtCore.QAbstractTableModel):
         index = self.indexFromId(transaction_id)
         item  = self.itemFromIndex(index)
 
-        if item is not None:
-            self.layoutAboutToBeChanged.emit()
+        if item is None:
+            # No change on the model.
+            return True
+
+        self.layoutAboutToBeChanged.emit()
+
+        if item is self._draft_item:
+            # A draft for `transaction_id` was found in the model. Let there be no draft.
+            self._resetDraft()
+        
+        try:
+            # Retrieves the item at the index row. Note that this will return
+            # the original item, not the draft, as the draft will have already
+            # been reset at this point. So, regardless if the row `index.row()`
+            # had a draft or not, remove the item at it.
+            item = self._items[index.row()]
+
             self._items.remove(item)
-            self._updateBalances(index.row(), emit_data_changed=False)
-            self.layoutChanged.emit()
+        except (IndexError, ValueError):
+            pass
+
+        self._updateBalances(index.row(), emit_data_changed=False)
+        self.layoutChanged.emit()
+        
+        return True
 
     def persistDraft(self) -> bool:
         if not self.hasDraft():
             return False
 
-        item      = self._draft_item
-        is_insert = item is self._insertable_item
+        is_insert = self._draft_item is self._insertable_item
 
-        with models.sql.get_session() as session:
-            if is_insert:
-                subtransactions = []
-
-                for sub_item in item.subtransactionItems():
-                    s = Subtransaction(
-                        comment   = sub_item.comment(),
-                        origin_id = sub_item.originAccountId(),
-                        target_id = sub_item.targetAccountId(),
-                        quantity  = sub_item.quantity()
-                    )
-                    
-                    subtransactions.append(s)
-                    session.add(s)
-
-                t = Transaction(date=item.date(), subtransactions=subtransactions)
-                session.add(t)
-            else:
-                session.execute(
-                    sa.update(Transaction)
-                      .where(Transaction.id == item.id())
-                      .values(date=item.date())
-                )
-
-                for sub_item in item.subtransactionItems():
-                    session.execute(
-                        sa.update(Subtransaction)
-                          .where(Subtransaction.id == sub_item.id())
-                          .values(
-                            comment   = sub_item.comment(),
-                            origin_id = sub_item.originAccountId(),
-                            target_id = sub_item.targetAccountId(),
-                            quantity  = sub_item.quantity()
-                          )
-                    )
-
-            session.commit()
-
-        row = self._draft_row
-
-        # Reflect updates to the database on the model.
         if is_insert:
-            self.layoutAboutToBeChanged.emit()
-
-            self._items.append(item.copy())
-            self._insertable_item = _InsertableItem(self._account_id)
-            self._draft_item      = None
-            self._draft_row       = -1
-
-            self.layoutChanged.emit()
+            self._insertDraft()
         else:
-            self._items[row] = item
-            self._draft_item = None
-            self._draft_row  = -1
-
-            self.dataChanged.emit(self.index(row, 0), self.index(row, self.columnCount() - 1))
-
-        self.draftStateChanged.emit(False)
-        self._updateBalances(row)
-
+            self._updateDraft()
+        
         return True
 
     def discardDraft(self) -> bool:
@@ -830,8 +799,7 @@ class TransactionTableModel(QtCore.QAbstractTableModel):
         if self._draft_item is self._insertable_item:
             self._insertable_item = _InsertableItem(self._account_id)
 
-        self._draft_item = None
-        self._draft_row  = -1
+        self._resetDraft()
         self.dataChanged.emit(self.index(row, 0), self.index(row, self.columnCount() - 1))
         self.draftStateChanged.emit(False)
 
@@ -863,7 +831,13 @@ class TransactionTableModel(QtCore.QAbstractTableModel):
         if not index.isValid():
             return None
 
-        return self._items[index.row()]
+        if index.row() == self._draft_row:
+            return self._draft_item
+
+        try:
+            return self._items[index.row()]
+        except IndexError:
+            return self._insertable_item
 
     def indexFromId(self, transaction_id: int) -> QtCore.QModelIndex:
         """
@@ -942,8 +916,7 @@ class TransactionTableModel(QtCore.QAbstractTableModel):
         # Thus, if we created a new draft, but no changed was made to the item, we discard
         # the new draft right away.
         if is_new_draft:
-            self._draft_item = None
-            self._draft_row  = -1
+            self._resetDraft()
 
         return False
 
@@ -977,9 +950,88 @@ class TransactionTableModel(QtCore.QAbstractTableModel):
     def _reset(self, account_id: typing.Optional[int]):
         self._account_id = account_id
         self._items      = []
+        self._resetDraft()
+    
+    def _resetDraft(self):
         self._draft_item = None
         self._draft_row  = -1
+
+    def _insertDraft(self):
+        item = self._draft_item
+
+        with models.sql.get_session() as session:
+            subtransactions = []
+
+            for sub_item in item.subtransactionItems():
+                s = Subtransaction(
+                    comment   = sub_item.comment(),
+                    origin_id = sub_item.originAccountId(),
+                    target_id = sub_item.targetAccountId(),
+                    quantity  = sub_item.quantity()
+                )
+                
+                subtransactions.append(s)
+                session.add(s)
+
+            t = Transaction(date=item.date(), subtransactions=subtransactions)
+            
+            session.add(t)
+            session.commit()
+
+            transaction_id = t.id
+            
+        self.layoutAboutToBeChanged.emit()
+
+        new_item     = item.copy()
+        new_item._id = transaction_id
+
+        # TODO: sort list by date
+        self._items.append(new_item)
+        self._insertable_item = _InsertableItem(self._account_id)
+        
+        row = self._draft_row
+        self._resetDraft()
+
+        self.layoutChanged.emit()
+        
+        self.draftStateChanged.emit(False)
+        self._updateBalances(row)
     
+    def _updateDraft(self):
+        item = self._draft_item
+
+        with models.sql.get_session() as session:
+            session.execute(
+                sa.update(Transaction)
+                    .where(Transaction.id == item.id())
+                    .values(date=item.date())
+            )
+
+            for sub_item in item.subtransactionItems():
+                session.execute(
+                    sa.update(Subtransaction)
+                        .where(Subtransaction.id == sub_item.id())
+                        .values(
+                        comment   = sub_item.comment(),
+                        origin_id = sub_item.originAccountId(),
+                        target_id = sub_item.targetAccountId(),
+                        quantity  = sub_item.quantity()
+                        )
+                )
+
+            session.commit()
+
+        row = self._draft_row
+
+        # TODO: maybe sort list by date, if date changed
+        self._items[row] = item
+        self._resetDraft()
+
+        self.dataChanged.emit(self.index(row, 0), self.index(row, self.columnCount() - 1))
+
+        self.draftStateChanged.emit(False)
+        self._updateBalances(row)
+
     def _updateBalances(self, start_row: int, emit_data_changed: bool = True):
         if start_row == 0:
             start_balance = decimal.Decimal(0)
