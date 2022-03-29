@@ -90,6 +90,9 @@ class TransactionPage(QtWidgets.QWidget):
 
     @QtCore.pyqtSlot()
     def _onRemoveTransactionButtonClicked(self):
+        if self._transactions_table.currentRow() == self._transactions_table.model().insertableRow():
+            return
+
         current_item = self._transactions_table.currentItem()
 
         if current_item is None:

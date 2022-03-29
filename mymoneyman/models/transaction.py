@@ -825,6 +825,12 @@ class TransactionTableModel(QtCore.QAbstractTableModel):
 
         return self._insertable_item is not None
 
+    def insertableRow(self) -> int:
+        if self.insertable():
+            return self.rowCount() - 1
+        else:
+            return -1
+
     def itemFromIndex(self, index: QtCore.QModelIndex) -> typing.Optional[TransactionTableItem]:
         """Returns the transaction item at `index`, or `None` if `index` is invalid."""
 
