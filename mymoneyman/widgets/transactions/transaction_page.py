@@ -15,16 +15,16 @@ class TransactionPage(QtWidgets.QWidget):
         self._acc_selection_combo.populate()
         self._acc_selection_combo.currentIndexChanged.connect(self._onCurrentIndexChanged)
 
-        self._insert_transaction_btn = QtWidgets.QPushButton(QtGui.QIcon(':/icons/insert.png'), 'Insert transaction')
-        self._remove_transaction_btn = QtWidgets.QPushButton(QtGui.QIcon(':/icons/delete.png'), 'Remove transaction')
-        self._cancel_transaction_btn = QtWidgets.QPushButton(QtGui.QIcon(':/icons/cancel.png'), 'Cancel transaction')
+        self._persist_transaction_btn = QtWidgets.QPushButton(QtGui.QIcon(':/icons/insert.png'), 'Save')
+        self._discard_transaction_btn = QtWidgets.QPushButton(QtGui.QIcon(':/icons/cancel.png'), 'Cancel')
+        self._remove_transaction_btn  = QtWidgets.QPushButton(QtGui.QIcon(':/icons/delete.png'), 'Remove')
 
-        self._insert_transaction_btn.setEnabled(False)
-        self._cancel_transaction_btn.setEnabled(False)
+        self._persist_transaction_btn.setEnabled(False)
+        self._discard_transaction_btn.setEnabled(False)
 
-        self._insert_transaction_btn.clicked.connect(self._onInsertTransactionButtonClicked)
+        self._persist_transaction_btn.clicked.connect(self._onPersistTransactionButtonClicked)
+        self._discard_transaction_btn.clicked.connect(self._onDiscardTransactionButtonClicked)
         self._remove_transaction_btn.clicked.connect(self._onRemoveTransactionButtonClicked)
-        self._cancel_transaction_btn.clicked.connect(self._onCancelTransactionButtonClicked)
 
         self._transactions_table = widgets.TransactionTableWidget()
         self._transactions_table.model().setInsertable(True)
@@ -37,9 +37,9 @@ class TransactionPage(QtWidgets.QWidget):
     
     def _initLayouts(self):
         buttons_layout = QtWidgets.QHBoxLayout()
-        buttons_layout.addWidget(self._insert_transaction_btn)
+        buttons_layout.addWidget(self._persist_transaction_btn)
+        buttons_layout.addWidget(self._discard_transaction_btn)
         buttons_layout.addWidget(self._remove_transaction_btn)
-        buttons_layout.addWidget(self._cancel_transaction_btn)
         buttons_layout.setAlignment(QtCore.Qt.AlignmentFlag.AlignRight)
 
         hbox = QtWidgets.QHBoxLayout()
@@ -77,15 +77,15 @@ class TransactionPage(QtWidgets.QWidget):
 
     @QtCore.pyqtSlot(bool)
     def _onDraftStateChanged(self, has_draft: bool):
-        self._insert_transaction_btn.setEnabled(has_draft)
-        self._cancel_transaction_btn.setEnabled(has_draft)
+        self._persist_transaction_btn.setEnabled(has_draft)
+        self._discard_transaction_btn.setEnabled(has_draft)
 
     @QtCore.pyqtSlot()
-    def _onInsertTransactionButtonClicked(self):
+    def _onPersistTransactionButtonClicked(self):
         self._transactions_table.model().persistDraft()
 
     @QtCore.pyqtSlot()
-    def _onCancelTransactionButtonClicked(self):
+    def _onDiscardTransactionButtonClicked(self):
         self._transactions_table.model().discardDraft()
 
     @QtCore.pyqtSlot()
