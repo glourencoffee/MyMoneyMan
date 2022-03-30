@@ -40,6 +40,7 @@ class TransactionTableWidget(QtWidgets.QWidget):
     def _initLayouts(self):
         main_layout = QtWidgets.QVBoxLayout()
         main_layout.addWidget(self._view)
+        main_layout.setContentsMargins(QtCore.QMargins())
         
         self.setLayout(main_layout)
 
