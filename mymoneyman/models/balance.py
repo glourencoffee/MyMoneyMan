@@ -50,6 +50,14 @@ class BalanceTreeItem:
     def balance(self) -> decimal.Decimal:
         return self._balance
 
+    def cumulativeBalance(self) -> decimal.Decimal:
+        balance = self._balance
+
+        for child in self._children:
+            balance += child.cumulativeBalance()
+        
+        return balance
+
     def parent(self) -> typing.Optional[BalanceTreeItem]:
         return self._parent
 
@@ -232,7 +240,7 @@ class BalanceTreeModel(QtCore.QAbstractItemModel):
                 
                 account_group = AccountGroup.fromAccountType(type)
 
-                if account_group in (AccountGroup.Equity, AccountGroup.Income, AccountGroup.Liability):
+                if account_group in (AccountGroup.Equity, AccountGroup.Income, AccountGroup.Liability) and balance != 0:
                     balance *= -1
 
                 balance_info[parent_id].append((id, type, name, desc, balance))
@@ -267,7 +275,7 @@ class BalanceTreeModel(QtCore.QAbstractItemModel):
         self.layoutChanged.emit()
 
     def totalBalance(self) -> decimal.Decimal:
-        return sum(top_level_item.balance() for top_level_item in self._root_item.children())
+        return self._root_item.cumulativeBalance()
 
     def itemFromIndex(self, index: QtCore.QModelIndex) -> typing.Optional[BalanceTreeItem]:
         if not index.isValid():
@@ -328,9 +336,7 @@ class BalanceTreeModel(QtCore.QAbstractItemModel):
         elif column == 1: return item.description()
         elif column == 2:
             # TODO: maybe move summing logic to query when having to deal with currency rates.
-            total_balance = item.balance() + sum(child.balance() for child in item.children())
-
-            return utils.short_format_number(total_balance, 2)
+            return utils.short_format_number(item.cumulativeBalance(), 2)
         else:
             return None
 
