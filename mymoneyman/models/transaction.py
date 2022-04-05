@@ -122,186 +122,146 @@ class TransactionType(enum.IntEnum):
 
         return TransactionType.Undefined
 
-class SubtransactionItem:
-    __slots__ = (
-        '_id',
-        '_comment',
-        '_quantity',
-        '_origin_account_id',
-        '_origin_account_name',
-        '_origin_account_type',
-        '_target_account_id',
-        '_target_account_name',
-        '_target_account_type'
-    )
+class TransactionTableColumn(enum.IntEnum):
+    Type          = 0 # (`TransactionType`, read-only)
+    Date          = 1 # (`QDateTime`,       read-write)
+    Comment       = 2 # (`str`,             read-write)
+    Transference  = 3 # (`int`,             read-write)
+    Inflow        = 4 # (`decimal.Decimal`, read-write)
+    Outflow       = 5 # (`decimal.Decimal`, read-write)
+    Balance       = 6 # (`decimal.Decimal`, read-only)
 
-    def __init__(self,
-                 id: int,
-                 comment: str,
-                 quantity: decimal.Decimal,
-                 origin_account_id: int,
-                 origin_account_name: str,
-                 origin_account_type: models.AccountType,
-                 target_account_id: int,
-                 target_account_name: str,
-                 target_account_type: models.AccountType
-    ):
-        self._id                  = id
-        self._comment             = comment
-        self._origin_account_id   = origin_account_id
-        self._origin_account_name = origin_account_name
-        self._origin_account_type = origin_account_type
-        self._target_account_id   = target_account_id
-        self._target_account_name = target_account_name
-        self._target_account_type = target_account_type
-        self._quantity            = quantity
-
-    def id(self) -> int:
-        return self._id
-
-    def comment(self) -> str:
-        return self._comment
-    
-    def quantity(self) -> decimal.Decimal:
-        return self._quantity
-
-    def relativeQuantity(self, reference_account_id: int) -> decimal.Decimal:
-        if reference_account_id == self._origin_account_id:
-            return -self._quantity # outflow
-        elif reference_account_id == self._target_account_id:
-            return self._quantity # inflow
-        else:
-            raise ValueError(f'reference account id {reference_account_id} is neither an origin account nor a target acount')
-
-    def originAccountId(self) -> int:
-        return self._origin_account_id
-
-    def originAccountName(self) -> str:
-        return self._origin_account_name
-
-    def originAccountType(self) -> models.AccountType:
-        return self._origin_account_type
-
-    def targetAccountId(self) -> int:
-        return self._target_account_id
-
-    def targetAccountName(self) -> str:
-        return self._target_account_name
-
-    def targetAccountType(self) -> models.AccountType:
-        return self._target_account_type
-
-    def copy(self) -> SubtransactionItem:
-        return SubtransactionItem(
-            self.id(),
-            self.comment(),
-            self.quantity(),
-            self.originAccountId(),
-            self.originAccountName(),
-            self.originAccountType(),
-            self.targetAccountId(),
-            self.targetAccountName(),
-            self.targetAccountType()
-        )
-
-    def __repr__(self) -> str:
-        return (
-            "SubtransactionItem<"
-            f"id={self._id} quantity={self._quantity} "
-            f"origin=(id={self._origin_account_id}, name='{self._origin_account_name}', type={repr(self._origin_account_type)}) "
-            f"target=(id={self._target_account_id}, name='{self._target_account_name}', type={repr(self._target_account_type)})"
-            ">"
-        )
+    def isReadWrite(self) -> bool:
+        C = TransactionTableColumn
+        
+        return self not in (C.Type, C.Balance)
 
 class TransactionTableItem:
     """Stores information of a transaction on `TransactionTableModel`."""
 
-    __slots__ = ('_id', '_date', '_balance', '_sub_items')
-    
-    class Column(enum.IntEnum):
-        Type          = 0 # (`TransactionType`, read-only)
-        Date          = 1 # (`QDateTime`,       read-write)
-        Comment       = 2 # (`str`,             read-write)
-        Transference  = 3 # (`int`,             read-write)
-        Inflow        = 4 # (`decimal.Decimal`, read-write)
-        Outflow       = 5 # (`decimal.Decimal`, read-write)
-        Balance       = 6 # (`decimal.Decimal`, read-only)
+    __slots__ = (
+        '_id',
+        '_sub_id',
+        '_date',
+        '_comment',
+        '_ref_account',
+        '_transfer_account',
+        '_quantity',
+        '_balance'
+    )
 
-        def isReadWrite(self) -> bool:
-            C = TransactionTableItem.Column
-            
-            return self not in (C.Type, C.Balance)
-
-    def __init__(self, id: int, date: datetime.datetime, balance: decimal.Decimal, subtransaction_items: typing.List[SubtransactionItem]):
-        if len(subtransaction_items) == 0:
-            raise ValueError('transaction must have at least one subtransaction')
-
-        self._id        = id
-        self._date      = date
-        self._balance   = balance
-        self._sub_items = subtransaction_items
+    def __init__(self,
+                 id: int,
+                 subtransaction_id: typing.Optional[int],
+                 date: datetime.datetime,
+                 comment: typing.Optional[str],
+                 reference_account: typing.Optional[models.AccountInfo],
+                 transference_account: typing.Optional[models.AccountInfo],
+                 quantity: decimal.Decimal,
+                 balance: decimal.Decimal
+    ):
+        self._id               = id
+        self._sub_id           = subtransaction_id
+        self._date             = date
+        self._comment          = comment
+        self._ref_account      = reference_account
+        self._transfer_account = transference_account
+        self._quantity         = quantity
+        self._balance          = balance
 
     def id(self) -> int:
         return self._id
 
+    def subtransactionId(self) -> typing.Optional[int]:
+        return self._sub_id
+
     def type(self) -> TransactionType:
         if self.isSplit():
             return TransactionType.Split
-        
-        sub_item = self._sub_items[0]
-        return TransactionType.fromAccountTypes(sub_item.originAccountType(), sub_item.targetAccountType())
-
-    def isSplit(self) -> bool:
-        return self.subtransactionCount() > 1
+        elif self._ref_account is not None:
+            return TransactionType.fromAccountTypes(self.originAccount().type, self.targetAccount().type)
+        else:
+            return TransactionType.Undefined
 
     def date(self) -> datetime.datetime:
         return self._date
 
+    def comment(self) -> typing.Optional[str]:
+        return self._comment
+
+    def referenceAccount(self) -> typing.Optional[models.AccountInfo]:
+        return self._ref_account
+
+    def transferenceAccount(self) -> typing.Optional[models.AccountInfo]:
+        return self._transfer_account
+
+    def originAccount(self) -> typing.Optional[models.AccountInfo]:
+        if self._ref_account is None or self._transfer_account is None:
+            return None
+        
+        if self.isInflow():
+            return self._transfer_account
+        else:
+            return self._ref_account
+
+    def targetAccount(self) -> typing.Optional[models.AccountInfo]:
+        if self._ref_account is None or self._transfer_account is None:
+            return None
+        
+        if self.isInflow():
+            return self._ref_account
+        else:
+            return self._transfer_account
+
+    def quantity(self) -> decimal.Decimal:
+        return self._quantity
+
     def balance(self) -> decimal.Decimal:
         return self._balance
 
-    def subtransactionItems(self) -> typing.List[SubtransactionItem]:
-        return self._sub_items.copy()
+    def isSplit(self) -> bool:
+        return self._transfer_account is None
 
-    def subtransactionCount(self) -> int:
-        return len(self._sub_items)
+    def isInflow(self) -> bool:
+        return self._quantity >= 0
 
-    def subtransactionTotal(self, reference_account_id: int) -> decimal.Decimal:
-        return sum(sub_item.relativeQuantity(reference_account_id) for sub_item in self._sub_items)
+    def flags(self, column: TransactionTableColumn) -> QtCore.Qt.ItemFlags:
+        flags = QtCore.Qt.ItemFlag.ItemIsEnabled | QtCore.Qt.ItemFlag.ItemIsSelectable
+        
+        if (not self.isSplit()) and column.isReadWrite():
+            flags |= QtCore.Qt.ItemFlag.ItemIsEditable
 
-    def setData(self, reference_account_id: int, column: Column, value: typing.Any, role: int = QtCore.Qt.ItemDataRole.EditRole) -> bool:
+        return flags
+
+    def setData(self, column: TransactionTableColumn, value: typing.Any, role: int = QtCore.Qt.ItemDataRole.EditRole) -> bool:
         if role == QtCore.Qt.ItemDataRole.DisplayRole:
-            return self.setDisplayRoleData(reference_account_id, column, value)
+            return self.setDisplayRoleData(column, value)
         
         elif role == QtCore.Qt.ItemDataRole.EditRole:
-            return self.setEditRoleData(reference_account_id, column, value)
+            return self.setEditRoleData(column, value)
 
         return False
 
-    def setDisplayRoleData(self, reference_account_id: int, column: Column, value: typing.Any) -> bool:
+    def setDisplayRoleData(self, column: TransactionTableColumn, value: typing.Any) -> bool:
         if self.isSplit():
             return False
 
-        sub_item = self._sub_items[0]
-
-        if column == TransactionTableItem.Column.Transference and isinstance(value, str):
-            if reference_account_id == sub_item.originAccountId():
-                if sub_item.targetAccountName() != value:
-                    sub_item._target_account_name = value
-                    # TODO: pass account type so we can refresh changes.
-                    return True
-            else:
-                if sub_item.originAccountName() != value:
-                    sub_item._origin_account_name = value
-                    return True
+        if (
+            column == TransactionTableColumn.Transference and
+            isinstance(value, str) and
+            self.transferenceAccount().name != value
+        ):
+            self._transfer_account = self._transfer_account._replace(name=value)
+            # TODO: pass account type so we can refresh changes.
+            return True
         
         return False
 
-    def setEditRoleData(self, reference_account_id: int, column: Column, value: typing.Any) -> bool:
+    def setEditRoleData(self, column: TransactionTableColumn, value: typing.Any) -> bool:
         if self.isSplit():
             return False
 
-        Column = TransactionTableItem.Column
+        Column = TransactionTableColumn
 
         if column == Column.Date and isinstance(value, QtCore.QDateTime):
             date = value.toPyDateTime()
@@ -312,176 +272,130 @@ class TransactionTableItem:
             self._date = date
             return True
 
-        sub_item = self._sub_items[0]
-
-        if column == Column.Comment and isinstance(value, str):
-            if sub_item.comment() == value or (value == '' and sub_item.comment() is None):
+        if column == Column.Comment and (isinstance(value, str) or value is None):
+            if self._comment == value:
                 return False
 
-            sub_item._comment = value
+            self._comment = value
             return True
         
-        if column == Column.Transference and isinstance(value, int):
-            if reference_account_id == sub_item.originAccountId():
-                if sub_item.targetAccountId() == value:
-                    return False
-
-                sub_item._target_account_id = value
-                return True
-            else:
-                if sub_item.originAccountId() == value:
-                    return False
-
-                sub_item._origin_account_id = value
-                return True
-
-        if column == Column.Inflow and isinstance(value, decimal.Decimal):
-            # TODO: use account currency's decimal places when currencies is introduced
-            value            = round(value, 8)
-            current_quantity = sub_item.relativeQuantity(reference_account_id)
-
-            if current_quantity >= 0:
-                current_quantity = value
-            else:
-                current_quantity += value
-
-                if current_quantity > 0:
-                    origin_name = sub_item._origin_account_name
-                    origin_type = sub_item._origin_account_type
-
-                    sub_item._origin_account_id   = sub_item._target_account_id
-                    sub_item._origin_account_name = sub_item._target_account_name
-                    sub_item._origin_account_type = sub_item._target_account_type
-                    sub_item._target_account_id   = reference_account_id
-                    sub_item._target_account_name = origin_name
-                    sub_item._target_account_type = origin_type
-
-            # TODO: use account currency's decimal places when currencies is introduced
-            current_quantity = round(abs(current_quantity), 8)
-
-            if current_quantity == sub_item.quantity():
-                return False
-            
-            sub_item._quantity = current_quantity
-
+        if column == Column.Transference and isinstance(value, int) and self._transfer_account.id != value:
+            self._transfer_account = self._transfer_account._replace(id=value)
             return True
 
-        if column == Column.Outflow and isinstance(value, decimal.Decimal):
+        if column in (Column.Inflow, Column.Outflow) and isinstance(value, decimal.Decimal):
             # TODO: use account currency's decimal places when currencies is introduced
-            value            = round(-value, 8)
-            current_quantity = sub_item.relativeQuantity(reference_account_id)
+            value = round(value, 8)
 
-            if current_quantity <= 0:
-                current_quantity = value
+            if column == Column.Inflow:
+                is_inflow        = value >= 0
+                is_flow_reversed = is_inflow == False
             else:
-                current_quantity += value
+                is_inflow        = value < 0
+                is_flow_reversed = is_inflow == True
 
-                if current_quantity < 0:
-                    target_name = sub_item._target_account_name
-                    target_type = sub_item._target_account_type
+            value    = abs(value)
+            quantity = self._quantity
 
-                    sub_item._target_account_id   = sub_item._origin_account_id
-                    sub_item._target_account_name = sub_item._origin_account_name
-                    sub_item._target_account_type = sub_item._origin_account_type
-                    sub_item._origin_account_id   = reference_account_id
-                    sub_item._origin_account_name = target_name
-                    sub_item._origin_account_type = target_type
+            if quantity >= 0:
+                if is_inflow:
+                    if is_flow_reversed:
+                        quantity += value
+                    else:
+                        quantity = value
+                else:
+                    quantity -= value
+            else:
+                if is_inflow:
+                    quantity += value
+                else:
+                    if is_flow_reversed:
+                        quantity -= value
+                    else:
+                        quantity = -value
 
             # TODO: use account currency's decimal places when currencies is introduced
-            current_quantity = round(abs(current_quantity), 8)
+            quantity = round(quantity, 8)
 
-            if current_quantity == sub_item.quantity():
+            if quantity == self.quantity():
                 return False
-
-            sub_item._quantity = current_quantity
+            
+            self._quantity = quantity
+            return True
 
         return False
 
-    def data(self, reference_account_id: int, column: Column, role: int = QtCore.Qt.ItemDataRole.DisplayRole) -> typing.Any:
+    def data(self, column: TransactionTableColumn, role: int = QtCore.Qt.ItemDataRole.DisplayRole) -> typing.Any:
         if role == QtCore.Qt.ItemDataRole.DisplayRole:
-            return self.getDisplayRoleData(reference_account_id, column)
+            return self.getDisplayRoleData(column)
         
-        elif role == QtCore.Qt.ItemDataRole.FontRole and column == TransactionTableItem.Column.Type:
-            font = QtGui.QFont()
-            font.setStyle(QtGui.QFont.Style.StyleItalic)
-            return font
+        elif role == QtCore.Qt.ItemDataRole.FontRole:
+            C = TransactionTableColumn
+
+            if column == C.Type or (self.isSplit() and column in (C.Comment, C.Transference)):
+                font = QtGui.QFont()
+                font.setStyle(QtGui.QFont.Style.StyleItalic)
+                return font
         
         elif role == QtCore.Qt.ItemDataRole.EditRole:
-            return self.getEditRoleData(reference_account_id, column)
+            return self.getEditRoleData(column)
         
         return None
 
-    def getDisplayRoleData(self, reference_account_id: int, column: Column) -> typing.Any:
-        Column = TransactionTableItem.Column
+    def getDisplayRoleData(self, column: TransactionTableColumn) -> typing.Any:
+        Column = TransactionTableColumn
 
-        if   column == Column.Type:    return self.type().name
-        elif column == Column.Date:    return QtCore.QDateTime(self.date()).toString('dd/MM/yyyy hh:mm:ss') # FIXME: let format be customizable
-        elif column == Column.Balance: return str(self.balance())
+        if   column == Column.Type:         return self.type().name
+        elif column == Column.Date:         return QtCore.QDateTime(self.date()).toString('dd/MM/yyyy hh:mm:ss') # FIXME: let format be customizable
+        elif column == Column.Comment:      return '-- Split Transaction --' if self.isSplit()      else self.comment()
+        elif column == Column.Transference: return '-- Many --'              if self.isSplit()      else self.transferenceAccount().name
+        elif column == Column.Inflow:       return str(self.quantity())      if self.quantity() > 0 else None
+        elif column == Column.Outflow:      return str(abs(self.quantity())) if self.quantity() < 0 else None
+        elif column == Column.Balance:      return str(self.balance())
         else:
-            if self.isSplit():
-                return '(Split)'
-            
-            sub_item = self._sub_items[0]
-
-            if column == Column.Comment:
-                return sub_item.comment()
-
-            if reference_account_id == sub_item.originAccountId():
-                if   column == Column.Transference: return sub_item.targetAccountName()
-                elif column == Column.Inflow:       return None
-                elif column == Column.Outflow:      return str(sub_item.quantity()) if sub_item.quantity() != 0 else None
-            else:
-                if   column == Column.Transference: return sub_item.originAccountName()
-                elif column == Column.Inflow:       return str(sub_item.quantity()) if sub_item.quantity() != 0 else None
-                elif column == Column.Outflow:      return None
-
             return None
 
-    def getEditRoleData(self, reference_account_id: int, column: Column) -> typing.Any:
-        Column = TransactionTableItem.Column
+    def getEditRoleData(self, column: TransactionTableColumn) -> typing.Any:
+        Column = TransactionTableColumn
 
-        if column == Column.Date:
-            return QtCore.QDateTime(self.date())
-
-        if self.isSplit():
+        if   column == Column.Date:         return QtCore.QDateTime(self.date())
+        elif column == Column.Comment:      return self.comment()
+        elif column == Column.Transference: return None if self.isSplit() else self.transferenceAccount().id
+        elif column == Column.Inflow:       return self.quantity()      if self.quantity() > 0 else None
+        elif column == Column.Outflow:      return abs(self.quantity()) if self.quantity() < 0 else None
+        else:
             return None
 
-        sub_item = self._sub_items[0]
-
-        if column == Column.Comment: return sub_item.comment()
-
-        if reference_account_id == sub_item.originAccountId():
-            if   column == Column.Transference: return sub_item.targetAccountId()
-            elif column == Column.Inflow:       return None
-            elif column == Column.Outflow:      return sub_item.quantity()
-        else:
-            if   column == Column.Transference: return sub_item.originAccountId()
-            elif column == Column.Inflow:       return sub_item.quantity()
-            elif column == Column.Outflow:      return None
-
-        return None
-
-    def copy(self) -> TransactionTableItem:
+    def copy(self, reference_account: models.AccountInfo) -> TransactionTableItem:
         return TransactionTableItem(
             self.id(),
+            self.subtransactionId(),
             self.date(),
-            self.balance(),
-            [sub_item.copy() for sub_item in self._sub_items]
+            self.comment(),
+            reference_account,
+            self.transferenceAccount(),
+            self.quantity(),
+            self.balance()
         )
 
     def __repr__(self) -> str:
         return f"TransactionTableItem<id={self._id} type={repr(self.type())} date={repr(self._date)} balance={self._balance}>"
 
 class _InsertableItem(TransactionTableItem):
-    def __init__(self, reference_account_id: int):
-        # FIXME: yeah, this is pretty ugly, having to use placeholder values, but
-        #        what to do?
-        sub_item = SubtransactionItem(0, '', decimal.Decimal(0), reference_account_id, '', ..., 0, '', ...)
+    def __init__(self):
+        super().__init__(
+            0,
+            None,
+            QtCore.QDateTime.currentDateTime().toPyDateTime(),
+            None,
+            ...,
+            models.AccountInfo(0, '', models.AccountType.Asset),
+            decimal.Decimal(0),
+            decimal.Decimal(0)
+        )
 
-        super().__init__(0, QtCore.QDateTime.currentDateTime().toPyDateTime(), decimal.Decimal(0), [sub_item])
-
-    def data(self, reference_account_id: int, column: Column, role: int = QtCore.Qt.ItemDataRole.DisplayRole) -> typing.Any:
-        Column = TransactionTableItem.Column
+    def data(self, column: TransactionTableColumn, role: int = QtCore.Qt.ItemDataRole.DisplayRole) -> typing.Any:
+        Column = TransactionTableColumn
 
         if role == QtCore.Qt.ItemDataRole.DisplayRole:
             if column == Column.Type:
@@ -490,7 +404,7 @@ class _InsertableItem(TransactionTableItem):
             if column == Column.Balance:
                 return None
         
-        return super().data(reference_account_id, column, role)
+        return super().data(column, role)
 
 class TransactionTableModel(QtCore.QAbstractTableModel):
     """Implements a model for manipulating transactions on the database.
@@ -531,35 +445,45 @@ class TransactionTableModel(QtCore.QAbstractTableModel):
     def reset(self):
         """Dissociates this model from an account, if any."""
 
-        if self._account_id is None:
+        if self._account is None:
             return
 
         self.beginResetModel()
         self._reset(None)
 
         if self.insertable():
-            self._insertable_item = _InsertableItem(-1)
+            self._insertable_item = _InsertableItem()
 
         self.endResetModel()
 
-    def accountId(self) -> typing.Optional[int]:
+    def account(self) -> typing.Optional[models.AccountInfo]:
         """
-        Returns the id of the account which this model is associated with,
+        Returns information of the account which this model is associated with,
         or `None` if this model is not associated with any account.
         """
 
-        return self._account_id
+        return self._account
 
     def selectAccount(self, account_id: int, extended_name_sep: str = ':'):
         """Retrieves transactions from the account whose id is `account_id`."""
 
         transactions = collections.defaultdict(list)
+        account_info = None
 
         with models.sql.get_session() as session:
             A = models.Account
             S = Subtransaction
             T = Transaction
             
+            account_info = session.query(A.name, A.type).where(A.id == account_id).one_or_none()
+
+            if account_info is None:
+                return
+
+            account_name = account_info[0]
+            account_type = account_info[1]
+            account_info = models.AccountInfo(account_id, account_name, account_type)
+
             # WITH RECURSIVE cte(id, type, parent_id, name, is_extended) AS (
             #   SELECT id, type, parent_id, name, FALSE
             #     FROM account
@@ -568,15 +492,25 @@ class TransactionTableModel(QtCore.QAbstractTableModel):
             #     FROM cte     AS p
             #     JOIN account AS c ON c.parent_id = p.id
             # )
-            #   SELECT t.id, t.date, s.id, s.comment, s.quantity,
-            #          origin.id, origin.type, (SELECT name FROM cte WHERE id = origin.id AND (parent_id IS NULL OR is_extended IS TRUE)),
+            #   SELECT *
+            #     FROM (
+            #   SELECT t.id, t.date, s.id, s.comment, -s.quantity,
             #          target.id, target.type, (SELECT name FROM cte WHERE id = target.id AND (parent_id IS NULL OR is_extended IS TRUE))
             #     FROM subtransaction AS s
             #     JOIN "transaction"  AS t      ON s.transaction_id = t.id
             #     JOIN account        AS origin ON s.origin_id      = origin.id
             #     JOIN account        AS target ON s.target_id      = target.id
-            #    WHERE origin.id = :account_id OR target.id = :account_id
-            # ORDER BY t.date, t.id ASC
+            #    WHERE origin.id = :account_id
+            #    UNION
+            #   SELECT t.id, t.date, s.id, s.comment, s.quantity,
+            #          origin.id, origin.type, (SELECT name FROM cte WHERE id = origin.id AND (parent_id IS NULL OR is_extended IS TRUE))
+            #     FROM subtransaction AS s
+            #     JOIN "transaction"  AS t      ON s.transaction_id = t.id
+            #     JOIN account        AS origin ON s.origin_id      = origin.id
+            #     JOIN account        AS target ON s.target_id      = target.id
+            #    WHERE target.id = :account_id
+            # )
+            # ORDER BY date, id ASC
 
             top_stmt = (
                 sa.select(
@@ -628,76 +562,62 @@ class TransactionTableModel(QtCore.QAbstractTableModel):
                   )
             )
 
-            stmt = (
-                sa.select(
-                    T.id, T.date, S.id, S.comment, S.quantity,
-                    Origin.id, Origin.type, origin_name_stmt.scalar_subquery(),
-                    Target.id, Target.type, target_name_stmt.scalar_subquery()
-                  )
-                  .select_from(S)
-                  .join(T,      S.transaction_id == T.id)
-                  .join(Origin, S.origin_id      == Origin.id)
-                  .join(Target, S.target_id      == Target.id)
-                  .where(
-                      sa.or_(
-                          Origin.id == account_id,
-                          Target.id == account_id
-                      )
-                  )
-                  .order_by(T.date.asc())
-                  .order_by(T.id.asc())
+            union = sa.union(
+                (
+                    sa.select(
+                        T.id, T.date, S.id, S.comment, -S.quantity,
+                        Target.id, Target.type, target_name_stmt.scalar_subquery()
+                    )
+                    .select_from(S)
+                    .join(T,      S.transaction_id == T.id)
+                    .join(Origin, S.origin_id      == Origin.id)
+                    .join(Target, S.target_id      == Target.id)
+                    .where(Origin.id == account_id)
+                ),
+                (
+                    sa.select(
+                        T.id, T.date, S.id, S.comment, S.quantity,
+                        Origin.id, Origin.type, origin_name_stmt.scalar_subquery()
+                    )
+                    .select_from(S)
+                    .join(T,      S.transaction_id == T.id)
+                    .join(Origin, S.origin_id      == Origin.id)
+                    .join(Target, S.target_id      == Target.id)
+                    .where(Target.id == account_id)
+                )
             )
 
-            result = session.execute(stmt).all()
+            main_stmt = union.select().order_by(union.c.date.asc(), union.c.id.asc())
 
-            for (
-                tra_id, tra_date, sub_id, comment, quantity,
-                origin_id, origin_type, origin_name,
-                target_id, target_type, target_name
-            ) in result:
-                origin_group = models.AccountGroup.fromAccountType(origin_type)
-                target_group = models.AccountGroup.fromAccountType(target_type)
+            result = session.execute(main_stmt).all()
 
-                origin_name = origin_group.name + extended_name_sep + origin_name
-                target_name = target_group.name + extended_name_sep + target_name
+            for (tra_id, tra_date, sub_id, comment, quantity, acc_id, acc_type, acc_name) in result:
+                group        = models.AccountGroup.fromAccountType(acc_type)
+                acc_ext_name = group.name + extended_name_sep + acc_name
+                transfer_acc = models.AccountInfo(acc_id, acc_ext_name, acc_type)
 
-                sub_item = SubtransactionItem(
-                    id                  = sub_id,
-                    comment             = comment,
-                    quantity            = quantity,
-                    origin_account_id   = origin_id,
-                    origin_account_name = origin_name,
-                    origin_account_type = origin_type,
-                    target_account_id   = target_id,
-                    target_account_name = target_name,
-                    target_account_type = target_type
-                )
-
-                transactions[(tra_id, tra_date)].append(sub_item)
+                transactions[(tra_id, tra_date)].append((sub_id, comment, transfer_acc, quantity))
         
         self.layoutAboutToBeChanged.emit()
         
-        self._reset(account_id)
-        self._insertable_item = _InsertableItem(account_id)
+        self._reset(account_info)
+        self._insertable_item = _InsertableItem()
 
-        balance = decimal.Decimal(0)
+        AccountGroup  = models.AccountGroup
+        account_group = AccountGroup.fromAccountType(account_info.type)
+        balance       = decimal.Decimal(0)
 
         for key, sub_items in transactions.items():
             transaction_id, transaction_date = key
             
-            account_type = None
-
-            for sub_item in sub_items:
-                if account_id == sub_item.originAccountId():
-                    balance     -= sub_item.quantity()
-                    account_type = sub_item.originAccountType()
-                else:
-                    balance     += sub_item.quantity()
-                    account_type = sub_item.targetAccountType()
-
-            AccountGroup  = models.AccountGroup
-            account_group = AccountGroup.fromAccountType(account_type)
-
+            if len(sub_items) > 1:
+                sub_id           = None
+                comment          = None
+                transfer_account = None
+                quantity         = sum(t[3] for t in sub_items)
+            else:
+                sub_id, comment, transfer_account, quantity = sub_items[0]
+            
             # Reverse the balance for Equity, Income, and Liability account groups.
             #
             # Income and Equity groups make for inherently "giving" accounts: transactions
@@ -711,13 +631,19 @@ class TransactionTableModel(QtCore.QAbstractTableModel):
             # when being presented to the user, because the user already knows that a liability
             # means a "subtraction" of his equity.
             if account_group in (AccountGroup.Equity, AccountGroup.Income, AccountGroup.Liability):
-                balance *= -1
+                balance -= quantity
+            else:
+                balance += quantity
 
             transaction_item = TransactionTableItem(
                 id                   = transaction_id,
+                subtransaction_id    = sub_id,
                 date                 = transaction_date,
-                balance              = balance,
-                subtransaction_items = sub_items
+                comment              = comment,
+                reference_account    = account_info,
+                transference_account = transfer_account,
+                quantity             = quantity,
+                balance              = balance
             )
 
             self._items.append(transaction_item)
@@ -797,7 +723,7 @@ class TransactionTableModel(QtCore.QAbstractTableModel):
         row = self._draft_row
 
         if self._draft_item is self._insertable_item:
-            self._insertable_item = _InsertableItem(self._account_id)
+            self._insertable_item = _InsertableItem()
 
         self._resetDraft()
         self.dataChanged.emit(self.index(row, 0), self.index(row, self.columnCount() - 1))
@@ -814,7 +740,7 @@ class TransactionTableModel(QtCore.QAbstractTableModel):
         self.layoutAboutToBeChanged.emit()
 
         if insertable:
-            self._insertable_item = _InsertableItem(self._account_id)
+            self._insertable_item = _InsertableItem()
         else:
             self._insertable_item = None
 
@@ -863,7 +789,7 @@ class TransactionTableModel(QtCore.QAbstractTableModel):
     # Overloaded methods
     ################################################################################
     def data(self, index: QtCore.QModelIndex, role: int = QtCore.Qt.ItemDataRole.DisplayRole) -> typing.Any:
-        if self._account_id is None:
+        if self._account is None:
             return None
         
         row = index.row()
@@ -877,12 +803,12 @@ class TransactionTableModel(QtCore.QAbstractTableModel):
             except IndexError:
                 item = self._insertable_item
 
-        col = TransactionTableItem.Column(index.column())
+        col = TransactionTableColumn(index.column())
 
-        return item.data(self._account_id, col, role)
+        return item.data(col, role)
 
     def setData(self, index: QtCore.QModelIndex, value: typing.Any, role: int = QtCore.Qt.ItemDataRole.EditRole) -> bool:
-        if self._account_id is None:
+        if self._account is None:
             return False
 
         row = index.row()
@@ -896,7 +822,7 @@ class TransactionTableModel(QtCore.QAbstractTableModel):
 
         if not self.hasDraft():
             # There's no editing going on, that is, no draft, so start a new one.
-            self._draft_item = item if item is self._insertable_item else item.copy()
+            self._draft_item = item if item is self._insertable_item else item.copy(self._account)
             self._draft_row  = row
             is_new_draft     = True
 
@@ -905,9 +831,9 @@ class TransactionTableModel(QtCore.QAbstractTableModel):
             # so ignore the editing request.
             return False
 
-        col = TransactionTableItem.Column(index.column())
+        col = TransactionTableColumn(index.column())
 
-        if self._draft_item.setData(self._account_id, col, value, role):
+        if self._draft_item.setData(col, value, role):
             self.dataChanged.emit(self.index(row, 0), self.index(row, self.columnCount() - 1))
 
             if is_new_draft:
@@ -927,16 +853,12 @@ class TransactionTableModel(QtCore.QAbstractTableModel):
         return False
 
     def flags(self, index: QtCore.QModelIndex) -> QtCore.Qt.ItemFlags:
-        if not index.isValid():
+        item = self.itemFromIndex(index)
+
+        if item is None:
             return QtCore.Qt.ItemFlag.NoItemFlags
 
-        flags = super().flags(index)
-        col   = TransactionTableItem.Column(index.column())
-
-        if col.isReadWrite():
-            flags |= QtCore.Qt.ItemFlag.ItemIsEditable
-
-        return flags
+        return item.flags(TransactionTableColumn(index.column()))
 
     def headerData(self, section: int, orientation: QtCore.Qt.Orientation, role: int = QtCore.Qt.ItemDataRole.DisplayRole) -> typing.Any:
         if orientation == QtCore.Qt.Horizontal and role == QtCore.Qt.ItemDataRole.DisplayRole:
@@ -953,9 +875,9 @@ class TransactionTableModel(QtCore.QAbstractTableModel):
     ################################################################################
     # Internals
     ################################################################################
-    def _reset(self, account_id: typing.Optional[int]):
-        self._account_id = account_id
-        self._items      = []
+    def _reset(self, account: typing.Optional[models.AccountInfo]):
+        self._account = account
+        self._items   = []
         self._resetDraft()
     
     def _resetDraft(self):
@@ -963,37 +885,31 @@ class TransactionTableModel(QtCore.QAbstractTableModel):
         self._draft_row  = -1
 
     def _insertDraft(self):
-        item = self._draft_item
+        item = self._draft_item.copy(self._account)
 
         with models.sql.get_session() as session:
-            subtransactions = []
-
-            for sub_item in item.subtransactionItems():
-                s = Subtransaction(
-                    comment   = sub_item.comment(),
-                    origin_id = sub_item.originAccountId(),
-                    target_id = sub_item.targetAccountId(),
-                    quantity  = sub_item.quantity()
-                )
+            s = Subtransaction(
+                comment   = item.comment(),
+                origin_id = item.originAccount().id,
+                target_id = item.targetAccount().id,
+                quantity  = item.quantity()
+            )
                 
-                subtransactions.append(s)
-                session.add(s)
-
-            t = Transaction(date=item.date(), subtransactions=subtransactions)
+            t = Transaction(date=item.date(), subtransactions=[s])
             
             session.add(t)
+            session.add(s)
             session.commit()
 
             transaction_id = t.id
             
         self.layoutAboutToBeChanged.emit()
 
-        new_item     = item.copy()
-        new_item._id = transaction_id
+        item._id = transaction_id
 
         # TODO: sort list by date
-        self._items.append(new_item)
-        self._insertable_item = _InsertableItem(self._account_id)
+        self._items.append(item)
+        self._insertable_item = _InsertableItem()
         
         row = self._draft_row
         self._resetDraft()
@@ -1013,17 +929,16 @@ class TransactionTableModel(QtCore.QAbstractTableModel):
                     .values(date=item.date())
             )
 
-            for sub_item in item.subtransactionItems():
-                session.execute(
-                    sa.update(Subtransaction)
-                        .where(Subtransaction.id == sub_item.id())
-                        .values(
-                        comment   = sub_item.comment(),
-                        origin_id = sub_item.originAccountId(),
-                        target_id = sub_item.targetAccountId(),
-                        quantity  = sub_item.quantity()
-                        )
-                )
+            session.execute(
+                sa.update(Subtransaction)
+                    .where(Subtransaction.id == item.subtransactionId())
+                    .values(
+                        comment   = item.comment(),
+                        origin_id = item.originAccount().id,
+                        target_id = item.targetAccount().id,
+                        quantity  = item.quantity()
+                    )
+            )
 
             session.commit()
 
@@ -1047,12 +962,12 @@ class TransactionTableModel(QtCore.QAbstractTableModel):
         updated = False
 
         for item in itertools.islice(self._items, start_row, None):
-            start_balance += item.subtransactionTotal(self._account_id)
+            start_balance += item._quantity
             item._balance = start_balance
 
             updated = True
 
         if updated and emit_data_changed:
-            column = TransactionTableItem.Column.Balance
+            column = TransactionTableColumn.Balance
 
             self.dataChanged.emit(self.index(start_row, column), self.index(self.rowCount() - 1, column))

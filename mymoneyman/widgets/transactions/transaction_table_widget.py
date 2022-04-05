@@ -23,7 +23,7 @@ class TransactionTableWidget(QtWidgets.QWidget):
         self._inflow_delegate    = common.SpinBoxDelegate()
         self._outflow_delegate   = common.SpinBoxDelegate()
 
-        Column = models.TransactionTableItem.Column
+        Column = models.TransactionTableColumn
 
         self._view.setItemDelegateForColumn(Column.Date,         self._date_time_delegate)
         self._view.setItemDelegateForColumn(Column.Transference, self._acc_list_delegate)

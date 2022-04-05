@@ -74,6 +74,8 @@ class Account(models.sql.Base):
     def __repr__(self) -> str:
         return f"Account<id={self.id} name='{self.name}' type={self.type} parent_id={self.parent_id}>"
 
+AccountInfo = collections.namedtuple('AccountInfo', ['id', 'name', 'type'])
+
 class AccountTreeItem:
     """Contains information of an item of `AccountTreeModel`."""
 
