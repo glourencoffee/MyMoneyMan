@@ -464,7 +464,7 @@ class TransactionTableModel(QtCore.QAbstractTableModel):
 
         return self._account
 
-    def selectAccount(self, account_id: int, extended_name_sep: str = ':'):
+    def selectAccount(self, account_id: int):
         """Retrieves transactions from the account whose id is `account_id`."""
 
         transactions = collections.defaultdict(list)
@@ -472,8 +472,6 @@ class TransactionTableModel(QtCore.QAbstractTableModel):
 
         with models.sql.get_session() as session:
             A = models.Account
-            S = Subtransaction
-            T = Transaction
             
             account_info = session.query(A.name, A.type).where(A.id == account_id).one_or_none()
 
@@ -484,105 +482,55 @@ class TransactionTableModel(QtCore.QAbstractTableModel):
             account_type = account_info[1]
             account_info = models.AccountInfo(account_id, account_name, account_type)
 
-            # WITH RECURSIVE cte(id, type, parent_id, name, is_extended) AS (
-            #   SELECT id, type, parent_id, name, FALSE
-            #     FROM account
-            #    UNION
-            #   SELECT c.id, c.type, c.parent_id, p.name || :extended_name_sep || c.name, TRUE
-            #     FROM cte     AS p
-            #     JOIN account AS c ON c.parent_id = p.id
-            # )
+            ################################################################################
             #   SELECT *
             #     FROM (
             #   SELECT t.id, t.date, s.id, s.comment, -s.quantity,
-            #          target.id, target.type, (SELECT name FROM cte WHERE id = target.id AND (parent_id IS NULL OR is_extended IS TRUE))
-            #     FROM subtransaction AS s
-            #     JOIN "transaction"  AS t      ON s.transaction_id = t.id
-            #     JOIN account        AS origin ON s.origin_id      = origin.id
-            #     JOIN account        AS target ON s.target_id      = target.id
+            #          target.id, target.type, target.name
+            #     FROM subtransaction        AS s
+            #     JOIN "transaction"         AS t      ON s.transaction_id = t.id
+            #     JOIN account               AS origin ON s.origin_id      = origin.id
+            #     JOIN extended_account_view AS target ON s.target_id      = target.id
             #    WHERE origin.id = :account_id
             #    UNION
             #   SELECT t.id, t.date, s.id, s.comment, s.quantity,
-            #          origin.id, origin.type, (SELECT name FROM cte WHERE id = origin.id AND (parent_id IS NULL OR is_extended IS TRUE))
-            #     FROM subtransaction AS s
-            #     JOIN "transaction"  AS t      ON s.transaction_id = t.id
-            #     JOIN account        AS origin ON s.origin_id      = origin.id
-            #     JOIN account        AS target ON s.target_id      = target.id
+            #          origin.id, origin.type, origin.name
+            #     FROM subtransaction        AS s
+            #     JOIN "transaction"         AS t      ON s.transaction_id = t.id
+            #     JOIN extended_account_view AS origin ON s.origin_id      = origin.id
+            #     JOIN account               AS target ON s.target_id      = target.id
             #    WHERE target.id = :account_id
             # )
             # ORDER BY date, id ASC
-
-            top_stmt = (
-                sa.select(
-                    A.id,
-                    A.type,
-                    A.parent_id,
-                    A.name,
-                    sa.literal(False).label('is_extended')
-                  )
-                  .cte('cte', recursive=True)
-            )
-
-            parent   = sa.orm.aliased(top_stmt)
-            Child: A = sa.orm.aliased(A)
-            
-            cte = top_stmt.union(
-                sa.select(
-                    Child.id,
-                    Child.type,
-                    Child.parent_id,
-                    (parent.c.name + sa.literal(extended_name_sep) + Child.name).label('name'),
-                    sa.literal(True).label('is_extended')
-                  )
-                  .join(parent, Child.parent_id == parent.c.id)
-            )
-
-            Origin: A = sa.orm.aliased(A)
-            Target: A = sa.orm.aliased(A)
-
-            origin_name_stmt = (
-                sa.select(cte.c.name)
-                  .where(cte.c.id == Origin.id)
-                  .where(
-                      sa.or_(
-                          cte.c.parent_id == None,
-                          cte.c.is_extended == True
-                      )
-                  )
-            )
-
-            target_name_stmt = (
-                sa.select(cte.c.name)
-                  .where(cte.c.id == Target.id)
-                  .where(
-                      sa.or_(
-                          cte.c.parent_id == None,
-                          cte.c.is_extended == True
-                      )
-                  )
-            )
+            ################################################################################
+            S       = Subtransaction
+            T       = Transaction
+            Origin  = sa.orm.aliased(A)
+            Target  = sa.orm.aliased(A)
+            XOrigin = sa.orm.aliased(models.ExtendedAccountView)
+            XTarget = sa.orm.aliased(models.ExtendedAccountView)
 
             union = sa.union(
                 (
                     sa.select(
                         T.id, T.date, S.id, S.comment, -S.quantity,
-                        Target.id, Target.type, target_name_stmt.scalar_subquery()
+                        XTarget.id, XTarget.type, XTarget.name
                     )
                     .select_from(S)
-                    .join(T,      S.transaction_id == T.id)
-                    .join(Origin, S.origin_id      == Origin.id)
-                    .join(Target, S.target_id      == Target.id)
+                    .join(T,       S.transaction_id == T.id)
+                    .join(Origin,  S.origin_id      == Origin.id)
+                    .join(XTarget, S.target_id      == XTarget.id)
                     .where(Origin.id == account_id)
                 ),
                 (
                     sa.select(
                         T.id, T.date, S.id, S.comment, S.quantity,
-                        Origin.id, Origin.type, origin_name_stmt.scalar_subquery()
+                        XOrigin.id, XOrigin.type, XOrigin.name
                     )
                     .select_from(S)
-                    .join(T,      S.transaction_id == T.id)
-                    .join(Origin, S.origin_id      == Origin.id)
-                    .join(Target, S.target_id      == Target.id)
+                    .join(T,       S.transaction_id == T.id)
+                    .join(XOrigin, S.origin_id      == XOrigin.id)
+                    .join(Target,  S.target_id      == Target.id)
                     .where(Target.id == account_id)
                 )
             )
@@ -593,7 +541,7 @@ class TransactionTableModel(QtCore.QAbstractTableModel):
 
             for (tra_id, tra_date, sub_id, comment, quantity, acc_id, acc_type, acc_name) in result:
                 group        = models.AccountGroup.fromAccountType(acc_type)
-                acc_ext_name = group.name + extended_name_sep + acc_name
+                acc_ext_name = group.name + ':' + acc_name
                 transfer_acc = models.AccountInfo(acc_id, acc_ext_name, acc_type)
 
                 transactions[(tra_id, tra_date)].append((sub_id, comment, transfer_acc, quantity))

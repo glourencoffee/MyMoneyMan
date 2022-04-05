@@ -4,6 +4,7 @@ import decimal
 import enum
 import typing
 import sqlalchemy as sa
+import sqlalchemy_utils as sa_utils
 from PyQt5      import QtCore
 from mymoneyman import models
 
@@ -65,14 +66,117 @@ class Account(models.sql.Base):
 
     __tablename__ = 'account'
 
-    id              = sa.Column(sa.Integer,           primary_key=True, autoincrement=True)
-    type            = sa.Column(sa.Enum(AccountType), nullable=False)
-    name            = sa.Column(sa.String,            nullable=False)
-    description     = sa.Column(sa.String)
-    parent_id       = sa.Column(sa.ForeignKey('account.id'))
+    id          = sa.Column(sa.Integer,           primary_key=True, autoincrement=True)
+    type        = sa.Column(sa.Enum(AccountType), nullable=False)
+    name        = sa.Column(sa.String,            nullable=False)
+    description = sa.Column(sa.String)
+    parent_id   = sa.Column(sa.ForeignKey('account.id'))
 
     def __repr__(self) -> str:
         return f"Account<id={self.id} name='{self.name}' type={self.type} parent_id={self.parent_id}>"
+
+def _makeExtendedAccountViewStatement():
+    # WITH RECURSIVE cte(id, type, description, parent_id, name, is_extended) AS
+    # (
+    #   SELECT id, type, description, parent_id, name, FALSE
+    #     FROM account
+    #    UNION
+    #   SELECT c.id, c.type, c.description, c.parent_id, p.name || ':' || c.name, TRUE
+    #     FROM cte     AS p
+    #     JOIN account AS c ON c.parent_id = p.id
+    # )
+    # SELECT id, type, name, description, parent_id
+    #   FROM cte
+    #  WHERE parent_id IS NULL OR is_extended IS TRUE
+
+    A = Account
+
+    top_stmt = (
+        sa.select(
+            A.id,
+            A.type,
+            A.description,
+            A.parent_id,
+            A.name,
+            sa.literal(False).label('is_extended')
+        )
+        .cte('cte', recursive=True)
+    )
+
+    parent   = sa.orm.aliased(top_stmt)
+    Child: A = sa.orm.aliased(A)
+
+    cte = top_stmt.union(
+        sa.select(
+            Child.id,
+            Child.type,
+            Child.description,
+            Child.parent_id,
+            (parent.c.name + sa.literal(':') + Child.name).label('name'),
+            sa.literal(True).label('is_extended')
+        )
+        .join(parent, Child.parent_id == parent.c.id)
+    )
+
+    stmt = (
+        sa.select(cte.c.id, cte.c.type, cte.c.name, cte.c.description, cte.c.parent_id)
+          .where(
+              sa.or_(
+                  cte.c.parent_id == None,
+                  cte.c.is_extended == True
+              )
+          )
+    )
+
+    return stmt
+
+from sqlalchemy_utils.view import CreateView
+from sqlalchemy.ext import compiler
+
+# https://github.com/kvesteri/sqlalchemy-utils/issues/396
+@sa.ext.compiler.compiles(sa_utils.view.CreateView)
+def compile_create_materialized_view(element, compiler, **kw):
+    return 'CREATE {}VIEW IF NOT EXISTS {} AS {}'.format(
+        'MATERIALIZED ' if element.materialized else '',
+        element.name,
+        compiler.sql_compiler.process(element.selectable, literal_binds=True),
+)
+
+class ExtendedAccountView(models.sql.Base):
+    """Provides a view that extends account names based on account hierarchy.
+
+    The purpose of this class is to combine names of parented accounts into a single name
+    separated by colon (:). It does so by using a view that selects all information from
+    the table `account` with a recursive CTE. This allows a responsive lookup of account
+    names even if the name of any account in an account hierarchy is changed.
+
+    Here's an example to illustrate what this class does in pratice. Say four accounts
+    are stored in the database table `account`, whose name and parent are shown as follows:
+
+    | Name           | Parent         |
+    |----------------|----------------|
+    | Current Assets | NULL           |
+    | Wallet         | Current Assets |
+    | Banks          | Current Assets |
+    | Savings        | Banks          |
+    
+    Querying all account names on this view will thus return the following results:
+    - 'Current Assets'
+    - 'Current Assets:Wallet'
+    - 'Current Assets:Banks'
+    - 'Current Assets:Banks:Savings'
+
+    Columns in this class are an exact match to columns in the ORM class `Account`, with
+    the only difference being the content of the column `name`.
+    """
+
+    __table__ = sa_utils.create_view('extended_account_view', _makeExtendedAccountViewStatement(), models.sql.meta)
+
+    id          = __table__.c.id
+    type        = __table__.c.type
+    name        = __table__.c.name
+    description = __table__.c.description
+    parent_id   = __table__.c.parent_id
 
 AccountInfo = collections.namedtuple('AccountInfo', ['id', 'name', 'type'])
 
