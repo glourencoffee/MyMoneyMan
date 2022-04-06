@@ -29,14 +29,14 @@ class AccountBoxDelegate(QtWidgets.QStyledItemDelegate):
         editor.setCurrentAccount(account_id)
 
     def setModelData(self, editor: common.AccountBox, model: QtCore.QAbstractItemModel, index: QtCore.QModelIndex):
-        account_data = editor.currentAccount()
+        account = editor.currentAccount()
 
-        if account_data is None:
+        if account is None:
             account_id   = None
             account_name = None
         else:
-            account_id   = account_data.id
-            account_name = account_data.extended_name
+            account_id   = account.id
+            account_name = account.name
         
         model.setData(index, account_id,   QtCore.Qt.ItemDataRole.EditRole)
         model.setData(index, account_name, QtCore.Qt.ItemDataRole.DisplayRole)

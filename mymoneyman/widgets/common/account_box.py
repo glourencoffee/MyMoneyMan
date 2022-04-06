@@ -1,11 +1,8 @@
-import collections
 import typing
 from PyQt5      import QtCore, QtGui, QtWidgets
 from mymoneyman import models
 
 class AccountBox(QtWidgets.QWidget):
-    AccountData = collections.namedtuple('AccountData', ['id', 'type', 'name', 'extended_name'])
-
     currentIndexChanged = QtCore.pyqtSignal(int)
 
     def __init__(self, parent: typing.Optional[QtWidgets.QWidget] = None):
@@ -43,14 +40,13 @@ class AccountBox(QtWidgets.QWidget):
                 continue
 
             for child in group_item.nestedChildren():
-                data = AccountBox.AccountData(
-                    id            = child.id(),
-                    type          = child.type(),
-                    name          = child.name(),
-                    extended_name = child.extendedName()
+                data = models.AccountInfo(
+                    id   = child.id(),
+                    name = child.extendedName(),
+                    type = child.type()
                 )
 
-                self._combo_box.addItem(QtGui.QIcon(), data.extended_name, data)
+                self._combo_box.addItem(QtGui.QIcon(), data.name, data)
 
     def setEditable(self, editable: bool):
         self._combo_box.setEditable(editable)
@@ -90,7 +86,7 @@ class AccountBox(QtWidgets.QWidget):
     def currentIndex(self) -> int:
         return self._combo_box.currentIndex()
 
-    def currentAccount(self) -> typing.Optional[AccountData]:
+    def currentAccount(self) -> typing.Optional[models.AccountInfo]:
         return self._combo_box.currentData()
     
     @QtCore.pyqtSlot(int)
