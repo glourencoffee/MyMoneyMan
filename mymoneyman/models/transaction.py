@@ -20,29 +20,6 @@ class Transaction(models.sql.Base):
     def __repr__(self) -> str:
         return f"Transaction<id={self.id} date={self.date}>"
 
-class Subtransaction(models.sql.Base):
-    __tablename__ = 'subtransaction'
-
-    id             = sa.Column(sa.Integer,                      primary_key=True, autoincrement=True)
-    transaction_id = sa.Column(sa.ForeignKey('transaction.id'), nullable=False)
-    comment        = sa.Column(sa.String)
-    origin_id      = sa.Column(sa.ForeignKey('account.id'),     nullable=False)
-    target_id      = sa.Column(sa.ForeignKey('account.id'),     nullable=False)
-    quantity       = sa.Column(models.sql.Decimal(8),           nullable=False)
-
-    transaction = sa.orm.relationship('Transaction', back_populates='subtransactions')
-
-    def __repr__(self) -> str:
-        return (
-            "Subtransaction<"
-            f"id={self.id} "
-            f"transaction_id={self.transaction_id} "
-            f"origin_id={self.origin_id} "
-            f"target_id={self.target_id} "
-            f"quantity={self.quantity}"
-            ">"
-        )
-
 class TransactionType(enum.IntEnum):
     Opening           = enum.auto()
     Income            = enum.auto()
@@ -503,7 +480,7 @@ class TransactionTableModel(QtCore.QAbstractTableModel):
             # )
             # ORDER BY date, id ASC
             ################################################################################
-            S       = Subtransaction
+            S       = models.Subtransaction
             T       = Transaction
             Origin  = sa.orm.aliased(A)
             Target  = sa.orm.aliased(A)
@@ -836,7 +813,7 @@ class TransactionTableModel(QtCore.QAbstractTableModel):
         item = self._draft_item.copy(self._account)
 
         with models.sql.get_session() as session:
-            s = Subtransaction(
+            s = models.Subtransaction(
                 comment   = item.comment(),
                 origin_id = item.originAccount().id,
                 target_id = item.targetAccount().id,
@@ -876,6 +853,8 @@ class TransactionTableModel(QtCore.QAbstractTableModel):
                     .where(Transaction.id == item.id())
                     .values(date=item.date())
             )
+
+            Subtransaction = models.Subtransaction
 
             session.execute(
                 sa.update(Subtransaction)

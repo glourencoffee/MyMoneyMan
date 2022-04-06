@@ -5,6 +5,29 @@ import typing
 from PyQt5      import QtCore
 from mymoneyman import models
 
+class Subtransaction(models.sql.Base):
+    __tablename__ = 'subtransaction'
+
+    id             = sa.Column(sa.Integer,                      primary_key=True, autoincrement=True)
+    transaction_id = sa.Column(sa.ForeignKey('transaction.id'), nullable=False)
+    comment        = sa.Column(sa.String)
+    origin_id      = sa.Column(sa.ForeignKey('account.id'),     nullable=False)
+    target_id      = sa.Column(sa.ForeignKey('account.id'),     nullable=False)
+    quantity       = sa.Column(models.sql.Decimal(8),           nullable=False)
+
+    transaction = sa.orm.relationship('Transaction', back_populates='subtransactions')
+
+    def __repr__(self) -> str:
+        return (
+            "Subtransaction<"
+            f"id={self.id} "
+            f"transaction_id={self.transaction_id} "
+            f"origin_id={self.origin_id} "
+            f"target_id={self.target_id} "
+            f"quantity={self.quantity}"
+            ">"
+        )
+
 class SubtransactionTableColumn(enum.IntEnum):
     Comment  = 0
     Origin   = 1
@@ -185,7 +208,7 @@ class SubtransactionTableModel(QtCore.QAbstractTableModel):
             #   JOIN extended_account_view AS t ON s.target_id = t.id
             #  WHERE s.transaction_id = :transaction_id
 
-            S = sa.orm.aliased(models.Subtransaction,      name='s')
+            S = sa.orm.aliased(Subtransaction,      name='s')
             O = sa.orm.aliased(models.ExtendedAccountView, name='o')
             T = sa.orm.aliased(models.ExtendedAccountView, name='t')
 
@@ -230,8 +253,6 @@ class SubtransactionTableModel(QtCore.QAbstractTableModel):
     def persist(self):
         if self._transaction_id is None:
             return
-
-        Subtransaction = models.Subtransaction
 
         with models.sql.get_session() as session:
             # Delete subtransactions from removed items.
