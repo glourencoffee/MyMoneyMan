@@ -462,36 +462,46 @@ class TransactionTableModel(QtCore.QAbstractTableModel):
             ################################################################################
             #   SELECT *
             #     FROM (
-            #   SELECT t.id, t.date, s.id, s.comment, -s.quantity,
-            #          target.id, target.type, target.name
+            #   SELECT t.id, t.date, s.id AS sub_id, s.comment, -s.quantity,
+            #          target.id   AS acc_id,
+            #          target.type AS acc_type,
+            #          target.name AS acc_name
             #     FROM subtransaction        AS s
             #     JOIN "transaction"         AS t      ON s.transaction_id = t.id
             #     JOIN account               AS origin ON s.origin_id      = origin.id
             #     JOIN extended_account_view AS target ON s.target_id      = target.id
             #    WHERE origin.id = :account_id
             #    UNION
-            #   SELECT t.id, t.date, s.id, s.comment, s.quantity,
-            #          origin.id, origin.type, origin.name
+            #   SELECT t.id, t.date, s.id AS sub_id, s.comment, s.quantity,
+            #          origin.id   AS acc_id,
+            #          origin.type AS acc_type,
+            #          origin.name AS acc_name
             #     FROM subtransaction        AS s
             #     JOIN "transaction"         AS t      ON s.transaction_id = t.id
             #     JOIN extended_account_view AS origin ON s.origin_id      = origin.id
             #     JOIN account               AS target ON s.target_id      = target.id
             #    WHERE target.id = :account_id
-            # )
-            # ORDER BY date, id ASC
+            # ) AS u
+            # ORDER BY u.date, u.id ASC
             ################################################################################
-            S       = models.Subtransaction
-            T       = Transaction
-            Origin  = sa.orm.aliased(A)
-            Target  = sa.orm.aliased(A)
-            XOrigin = sa.orm.aliased(models.ExtendedAccountView)
-            XTarget = sa.orm.aliased(models.ExtendedAccountView)
+            S       = sa.orm.aliased(models.Subtransaction,      name='s')
+            T       = sa.orm.aliased(Transaction,                name='t')
+            Origin  = sa.orm.aliased(A,                          name='origin')
+            Target  = sa.orm.aliased(A,                          name='target')
+            XOrigin = sa.orm.aliased(models.ExtendedAccountView, name='origin')
+            XTarget = sa.orm.aliased(models.ExtendedAccountView, name='target')
 
             union = sa.union(
                 (
                     sa.select(
-                        T.id, T.date, S.id, S.comment, -S.quantity,
-                        XTarget.id, XTarget.type, XTarget.name
+                        T.id,
+                        T.date,
+                        S.id.label('sub_id'),
+                        S.comment,
+                        (-S.quantity).label('quantity'),
+                        XTarget.id.label('acc_id'),
+                        XTarget.type.label('acc_type'),
+                        XTarget.name.label('acc_name')
                     )
                     .select_from(S)
                     .join(T,       S.transaction_id == T.id)
@@ -501,8 +511,14 @@ class TransactionTableModel(QtCore.QAbstractTableModel):
                 ),
                 (
                     sa.select(
-                        T.id, T.date, S.id, S.comment, S.quantity,
-                        XOrigin.id, XOrigin.type, XOrigin.name
+                        T.id,
+                        T.date,
+                        S.id.label('sub_id'),
+                        S.comment,
+                        S.quantity.label('quantity'),
+                        XOrigin.id.label('acc_id'),
+                        XOrigin.type.label('acc_type'),
+                        XOrigin.name.label('acc_name')
                     )
                     .select_from(S)
                     .join(T,       S.transaction_id == T.id)
@@ -510,7 +526,7 @@ class TransactionTableModel(QtCore.QAbstractTableModel):
                     .join(Target,  S.target_id      == Target.id)
                     .where(Target.id == account_id)
                 )
-            )
+            ).alias('u')
 
             main_stmt = union.select().order_by(union.c.date.asc(), union.c.id.asc())
 

@@ -181,8 +181,8 @@ class BalanceTreeModel(QtCore.QAbstractItemModel):
             # All the accounts retrieved are filtered according to `account_types`.
             ################################################################################
 
-            S = models.Subtransaction
-            A = models.Account
+            S = sa.orm.aliased(models.Subtransaction, name='s')
+            A = sa.orm.aliased(models.Account,        name='a')
 
             cte_stmt = sa.union(
                 (
