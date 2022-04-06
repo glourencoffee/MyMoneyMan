@@ -383,6 +383,85 @@ class _InsertableItem(TransactionTableItem):
         
         return super().data(column, role)
 
+def _makeSelectTransactionStatement(account_id: int, transaction_id: typing.Optional[int] = None):
+    ################################################################################
+    #   SELECT *
+    #     FROM (
+    #   SELECT t.id, t.date, s.id AS sub_id, s.comment, -s.quantity,
+    #          target.id   AS acc_id,
+    #          target.type AS acc_type,
+    #          target.name AS acc_name
+    #     FROM subtransaction        AS s
+    #     JOIN "transaction"         AS t      ON s.transaction_id = t.id
+    #     JOIN account               AS origin ON s.origin_id      = origin.id
+    #     JOIN extended_account_view AS target ON s.target_id      = target.id
+    #    WHERE origin.id = :account_id [AND transaction = :transaction_id]
+    #    UNION
+    #   SELECT t.id, t.date, s.id AS sub_id, s.comment, s.quantity,
+    #          origin.id   AS acc_id,
+    #          origin.type AS acc_type,
+    #          origin.name AS acc_name
+    #     FROM subtransaction        AS s
+    #     JOIN "transaction"         AS t      ON s.transaction_id = t.id
+    #     JOIN extended_account_view AS origin ON s.origin_id      = origin.id
+    #     JOIN account               AS target ON s.target_id      = target.id
+    #    WHERE target.id = :account_id [AND transaction = :transaction_id]
+    # ) AS u
+    # ORDER BY u.date, u.id ASC
+    ################################################################################
+    S       = sa.orm.aliased(models.Subtransaction,      name='s')
+    T       = sa.orm.aliased(Transaction,                name='t')
+    Origin  = sa.orm.aliased(models.Account,             name='origin')
+    Target  = sa.orm.aliased(models.Account,             name='target')
+    XOrigin = sa.orm.aliased(models.ExtendedAccountView, name='origin')
+    XTarget = sa.orm.aliased(models.ExtendedAccountView, name='target')
+
+    upper_select = (
+        sa.select(
+            T.id,
+            T.date,
+            S.id.label('sub_id'),
+            S.comment,
+            (-S.quantity).label('quantity'),
+            XTarget.id.label('acc_id'),
+            XTarget.type.label('acc_type'),
+            XTarget.name.label('acc_name')
+        )
+        .select_from(S)
+        .join(T,       S.transaction_id == T.id)
+        .join(Origin,  S.origin_id      == Origin.id)
+        .join(XTarget, S.target_id      == XTarget.id)
+        .where(Origin.id == account_id)
+    )
+
+    lower_select = (
+        sa.select(
+            T.id,
+            T.date,
+            S.id.label('sub_id'),
+            S.comment,
+            S.quantity.label('quantity'),
+            XOrigin.id.label('acc_id'),
+            XOrigin.type.label('acc_type'),
+            XOrigin.name.label('acc_name')
+        )
+        .select_from(S)
+        .join(T,       S.transaction_id == T.id)
+        .join(XOrigin, S.origin_id      == XOrigin.id)
+        .join(Target,  S.target_id      == Target.id)
+        .where(Target.id == account_id)
+    )
+
+    if transaction_id is not None:
+        upper_select = upper_select.where(T.id == transaction_id)
+        lower_select = lower_select.where(T.id == transaction_id)
+
+    union = sa.union(upper_select, lower_select).alias('u')
+
+    main_stmt = union.select().order_by(union.c.date.asc(), union.c.id.asc())
+
+    return main_stmt
+
 class TransactionTableModel(QtCore.QAbstractTableModel):
     """Implements a model for manipulating transactions on the database.
     
@@ -459,78 +538,8 @@ class TransactionTableModel(QtCore.QAbstractTableModel):
             account_type = account_info[1]
             account_info = models.AccountInfo(account_id, account_name, account_type)
 
-            ################################################################################
-            #   SELECT *
-            #     FROM (
-            #   SELECT t.id, t.date, s.id AS sub_id, s.comment, -s.quantity,
-            #          target.id   AS acc_id,
-            #          target.type AS acc_type,
-            #          target.name AS acc_name
-            #     FROM subtransaction        AS s
-            #     JOIN "transaction"         AS t      ON s.transaction_id = t.id
-            #     JOIN account               AS origin ON s.origin_id      = origin.id
-            #     JOIN extended_account_view AS target ON s.target_id      = target.id
-            #    WHERE origin.id = :account_id
-            #    UNION
-            #   SELECT t.id, t.date, s.id AS sub_id, s.comment, s.quantity,
-            #          origin.id   AS acc_id,
-            #          origin.type AS acc_type,
-            #          origin.name AS acc_name
-            #     FROM subtransaction        AS s
-            #     JOIN "transaction"         AS t      ON s.transaction_id = t.id
-            #     JOIN extended_account_view AS origin ON s.origin_id      = origin.id
-            #     JOIN account               AS target ON s.target_id      = target.id
-            #    WHERE target.id = :account_id
-            # ) AS u
-            # ORDER BY u.date, u.id ASC
-            ################################################################################
-            S       = sa.orm.aliased(models.Subtransaction,      name='s')
-            T       = sa.orm.aliased(Transaction,                name='t')
-            Origin  = sa.orm.aliased(A,                          name='origin')
-            Target  = sa.orm.aliased(A,                          name='target')
-            XOrigin = sa.orm.aliased(models.ExtendedAccountView, name='origin')
-            XTarget = sa.orm.aliased(models.ExtendedAccountView, name='target')
-
-            union = sa.union(
-                (
-                    sa.select(
-                        T.id,
-                        T.date,
-                        S.id.label('sub_id'),
-                        S.comment,
-                        (-S.quantity).label('quantity'),
-                        XTarget.id.label('acc_id'),
-                        XTarget.type.label('acc_type'),
-                        XTarget.name.label('acc_name')
-                    )
-                    .select_from(S)
-                    .join(T,       S.transaction_id == T.id)
-                    .join(Origin,  S.origin_id      == Origin.id)
-                    .join(XTarget, S.target_id      == XTarget.id)
-                    .where(Origin.id == account_id)
-                ),
-                (
-                    sa.select(
-                        T.id,
-                        T.date,
-                        S.id.label('sub_id'),
-                        S.comment,
-                        S.quantity.label('quantity'),
-                        XOrigin.id.label('acc_id'),
-                        XOrigin.type.label('acc_type'),
-                        XOrigin.name.label('acc_name')
-                    )
-                    .select_from(S)
-                    .join(T,       S.transaction_id == T.id)
-                    .join(XOrigin, S.origin_id      == XOrigin.id)
-                    .join(Target,  S.target_id      == Target.id)
-                    .where(Target.id == account_id)
-                )
-            ).alias('u')
-
-            main_stmt = union.select().order_by(union.c.date.asc(), union.c.id.asc())
-
-            result = session.execute(main_stmt).all()
+            stmt   =_makeSelectTransactionStatement(account_id)
+            result = session.execute(stmt).all()
 
             for (tra_id, tra_date, sub_id, comment, quantity, acc_id, acc_type, acc_name) in result:
                 group        = models.AccountGroup.fromAccountType(acc_type)
@@ -593,6 +602,48 @@ class TransactionTableModel(QtCore.QAbstractTableModel):
 
     def hasDraft(self) -> bool:
         return self._draft_item is not None
+
+    def refresh(self, index: QtCore.QModelIndex):
+        row = index.row()
+
+        try:
+            transaction_item = self._items[row]
+        except IndexError:
+            return
+
+        transaction_id   = None
+        transaction_date = None
+        subtransactions  = []
+        
+        with models.sql.get_session() as session:
+            stmt   = _makeSelectTransactionStatement(self._account.id, transaction_item.id())
+            result = session.execute(stmt).all()
+
+            for (tra_id, tra_date, sub_id, comment, quantity, acc_id, acc_type, acc_name) in result:
+                transaction_id   = tra_id
+                transaction_date = tra_date
+
+                group        = models.AccountGroup.fromAccountType(acc_type)
+                acc_ext_name = group.name + ':' + acc_name
+                transfer_acc = models.AccountInfo(acc_id, acc_ext_name, acc_type)
+
+                subtransactions.append((sub_id, comment, transfer_acc, quantity))
+
+        if len(subtransactions) == 1:
+            sub_id, comment, transfer_account, quantity = subtransactions[0]
+        else:
+            sub_id           = None
+            comment          = None
+            transfer_account = None
+            quantity         = sum(t[3] for t in subtransactions)
+        
+        transaction_item._sub_id           = sub_id
+        transaction_item._comment          = comment
+        transaction_item._transfer_account = transfer_account
+        transaction_item._quantity         = quantity
+
+        self.dataChanged.emit(self.index(row, 0), self.index(row, self.columnCount() - 2))
+        self._updateBalances(row)
 
     def removeTransaction(self, transaction_id: int) -> bool:
         """Removes a transaction from the database given its id.

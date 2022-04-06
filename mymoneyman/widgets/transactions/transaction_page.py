@@ -85,13 +85,16 @@ class TransactionPage(QtWidgets.QWidget):
 
     @QtCore.pyqtSlot()
     def _onSplitTransactionButtonClicked(self):
-        transaction_item = self._transactions_table.currentItem()
+        transaction_index = self._transactions_table.currentIndex()
+        transaction_item  = self._transactions_table.model().itemFromIndex(transaction_index)
 
         if transaction_item is None:
             return
 
         dialog = widgets.SplitTransactionDialog(transaction_item.id())
-        dialog.exec()
+        
+        if dialog.exec():
+            self._transactions_table.model().refresh(transaction_index)
 
     @QtCore.pyqtSlot()
     def _onPersistTransactionButtonClicked(self):
