@@ -12,7 +12,7 @@ class TransactionPage(QtWidgets.QWidget):
     
     def _initWidgets(self):
         self._acc_selection_combo = common.AccountBox()
-        self._acc_selection_combo.populate()
+        self._acc_selection_combo.model().select()
         self._acc_selection_combo.currentIndexChanged.connect(self._onCurrentIndexChanged)
 
         self._split_transaction_btn   = QtWidgets.QPushButton(QtGui.QIcon(), 'Split')
@@ -57,7 +57,7 @@ class TransactionPage(QtWidgets.QWidget):
     def refresh(self):
         current_account = self._acc_selection_combo.currentAccount()
 
-        self._acc_selection_combo.populate()
+        self._acc_selection_combo.model().select()
 
         if current_account is not None:
             self._acc_selection_combo.setCurrentAccount(current_account.id)
