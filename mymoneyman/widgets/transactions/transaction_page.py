@@ -15,6 +15,7 @@ class TransactionPage(QtWidgets.QWidget):
         self._acc_selection_combo.populate()
         self._acc_selection_combo.currentIndexChanged.connect(self._onCurrentIndexChanged)
 
+        self._split_transaction_btn   = QtWidgets.QPushButton(QtGui.QIcon(), 'Split')
         self._persist_transaction_btn = QtWidgets.QPushButton(QtGui.QIcon(':/icons/insert.png'), 'Save')
         self._discard_transaction_btn = QtWidgets.QPushButton(QtGui.QIcon(':/icons/cancel.png'), 'Cancel')
         self._remove_transaction_btn  = QtWidgets.QPushButton(QtGui.QIcon(':/icons/delete.png'), 'Remove')
@@ -22,6 +23,7 @@ class TransactionPage(QtWidgets.QWidget):
         self._persist_transaction_btn.setEnabled(False)
         self._discard_transaction_btn.setEnabled(False)
 
+        self._split_transaction_btn.clicked.connect(self._onSplitTransactionButtonClicked)
         self._persist_transaction_btn.clicked.connect(self._onPersistTransactionButtonClicked)
         self._discard_transaction_btn.clicked.connect(self._onDiscardTransactionButtonClicked)
         self._remove_transaction_btn.clicked.connect(self._onRemoveTransactionButtonClicked)
@@ -37,6 +39,7 @@ class TransactionPage(QtWidgets.QWidget):
     
     def _initLayouts(self):
         buttons_layout = QtWidgets.QHBoxLayout()
+        buttons_layout.addWidget(self._split_transaction_btn)
         buttons_layout.addWidget(self._persist_transaction_btn)
         buttons_layout.addWidget(self._discard_transaction_btn)
         buttons_layout.addWidget(self._remove_transaction_btn)
@@ -79,6 +82,16 @@ class TransactionPage(QtWidgets.QWidget):
     def _onDraftStateChanged(self, has_draft: bool):
         self._persist_transaction_btn.setEnabled(has_draft)
         self._discard_transaction_btn.setEnabled(has_draft)
+
+    @QtCore.pyqtSlot()
+    def _onSplitTransactionButtonClicked(self):
+        transaction_item = self._transactions_table.currentItem()
+
+        if transaction_item is None:
+            return
+
+        dialog = widgets.SplitTransactionDialog(transaction_item.id())
+        dialog.exec()
 
     @QtCore.pyqtSlot()
     def _onPersistTransactionButtonClicked(self):
