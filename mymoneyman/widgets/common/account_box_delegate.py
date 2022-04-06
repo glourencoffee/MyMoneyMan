@@ -4,19 +4,18 @@ from mymoneyman         import models
 from mymoneyman.widgets import common
 
 class AccountBoxDelegate(QtWidgets.QStyledItemDelegate):
-    def __init__(self, model: models.AccountTreeModel = models.AccountTreeModel(), parent: typing.Optional[QtCore.QObject] = None):
+    def __init__(self, model: models.AccountListModel = models.AccountListModel(), parent: typing.Optional[QtCore.QObject] = None):
         super().__init__(parent)
 
         self._model = model
+        self._model.select()
     
     def createEditor(self,
                      parent: QtWidgets.QWidget,
                      option: QtWidgets.QStyleOptionViewItem,
                      index: QtCore.QModelIndex
     ):
-        editor = common.AccountBox(parent)
-        editor.setModel(self._model)
-        editor.populate()
+        editor = common.AccountBox(self._model, parent)
         editor.setEditable(True)
         
         self.setEditorData(editor, index)

@@ -5,18 +5,18 @@ from mymoneyman import models
 class AccountBox(QtWidgets.QWidget):
     currentIndexChanged = QtCore.pyqtSignal(int)
 
-    def __init__(self, parent: typing.Optional[QtWidgets.QWidget] = None):
+    def __init__(self, model: models.AccountListModel = models.AccountListModel(), parent: typing.Optional[QtWidgets.QWidget] = None):
         super().__init__(parent)
 
-        self._initWidgets()
+        self._initWidgets(model)
         self._initLayouts()
 
-        self.setModel(models.AccountTreeModel())
-
-    def _initWidgets(self):
+    def _initWidgets(self, model: models.AccountListModel):
         self._combo_box = QtWidgets.QComboBox()
         self._combo_box.currentIndexChanged.connect(self._onCurrentIndexChanged)
-        self._combo_box.setEditable(False)
+        self._combo_box.setModel(model)
+
+        self.setEditable(False)
 
     def _initLayouts(self):
         main_layout = QtWidgets.QVBoxLayout()
@@ -25,28 +25,8 @@ class AccountBox(QtWidgets.QWidget):
 
         self.setLayout(main_layout)
 
-    def setModel(self, model: models.AccountTreeModel):
-        self._model = model
-
-    def populate(self, groups: typing.Sequence[models.AccountGroup] = models.AccountGroup.allButEquity()):
-        self.model().select(groups)
-
-        self._combo_box.clear()
-
-        for group in groups:
-            group_item = self.model().topLevelItem(group)
-
-            if group_item is None:
-                continue
-
-            for child in group_item.nestedChildren():
-                data = models.AccountInfo(
-                    id   = child.id(),
-                    name = child.extendedName(),
-                    type = child.type()
-                )
-
-                self._combo_box.addItem(QtGui.QIcon(), data.name, data)
+    def setModel(self, model: models.AccountListModel):
+        self._combo_box.setModel(model)
 
     def setEditable(self, editable: bool):
         self._combo_box.setEditable(editable)
@@ -68,26 +48,25 @@ class AccountBox(QtWidgets.QWidget):
     def setCurrentIndex(self, index: int):
         self._combo_box.setCurrentIndex(index)
 
-    def setCurrentAccount(self, id: int) -> bool:
-        for index in range(self._combo_box.count()):
-            account = self._combo_box.itemData(index)
+    def setCurrentAccount(self, account_id: int) -> bool:
+        index = self.model().indexFromId(account_id)
 
-            if id == account.id:
-                self._combo_box.setCurrentIndex(index)
-                return True
+        if not index.isValid():
+            return False
 
-        self.setCurrentIndex(-1)
+        self._combo_box.setCurrentIndex(index.row())
+        return True
 
-        return False
-
-    def model(self) -> models.AccountTreeModel:
-        return self._model
+    def model(self) -> models.AccountListModel:
+        return self._combo_box.model()
 
     def currentIndex(self) -> int:
         return self._combo_box.currentIndex()
 
     def currentAccount(self) -> typing.Optional[models.AccountInfo]:
-        return self._combo_box.currentData()
+        row = self.currentIndex()
+
+        return self.model().accountFromIndex(self.model().index(row))
     
     @QtCore.pyqtSlot(int)
     def _onCurrentIndexChanged(self, index: int):

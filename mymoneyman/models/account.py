@@ -584,3 +584,54 @@ class AccountTreeModel(QtCore.QAbstractItemModel):
 
     def columnCount(self, parent: QtCore.QModelIndex = QtCore.QModelIndex()) -> int:
         return 1
+
+class AccountListModel(QtCore.QAbstractListModel):
+    def __init__(self, parent: typing.Optional[QtCore.QObject] = None):
+        super().__init__(parent)
+
+        self._accounts = []
+
+    def select(self, extended_names: bool = True):
+        with models.sql.get_session() as session:
+            A      = ExtendedAccountView if extended_names else Account
+            stmt   = sa.select(A.id, A.name, A.type).select_from(A)
+            result = session.execute(stmt).all()
+
+            self.layoutAboutToBeChanged.emit()
+            self._accounts.clear()
+
+            for acc in result:
+                if extended_names:
+                    acc_id, acc_name, acc_type = acc
+                    acc_group = AccountGroup.fromAccountType(acc_type)
+
+                    self._accounts.append(AccountInfo(acc_id, acc_group.name + ':' + acc_name, acc_type))
+                else:
+                    self._accounts.append(AccountInfo._make(acc))
+
+            self._accounts.sort(key=lambda acc: acc.name)
+
+            self.layoutChanged.emit()
+
+    def accountFromIndex(self, index: QtCore.QModelIndex) -> typing.Optional[AccountInfo]:
+        if not index.isValid():
+            return None
+
+        return self._accounts[index.row()]
+
+    def indexFromId(self, account_id: int) -> QtCore.QModelIndex:
+        for row, acc in enumerate(self._accounts):
+            if acc.id == account_id:
+                return self.index(row)
+        
+        return QtCore.QModelIndex()
+
+    def data(self, index: QtCore.QModelIndex, role: int = QtCore.Qt.ItemDataRole.DisplayRole) -> typing.Any:
+        if role in (QtCore.Qt.ItemDataRole.DisplayRole, QtCore.Qt.ItemDataRole.EditRole):
+            account = self._accounts[index.row()]
+            return account.name
+        
+        return None
+
+    def rowCount(self, parent: QtCore.QModelIndex = QtCore.QModelIndex()) -> int:
+        return len(self._accounts)
