@@ -1,5 +1,5 @@
 from PyQt5              import QtCore, QtWidgets
-from mymoneyman.widgets import accounts, transactions
+from mymoneyman.widgets import accounts, transactions, assets
 
 class MainWindow(QtWidgets.QMainWindow):
     def __init__(self):
@@ -16,10 +16,13 @@ class MainWindow(QtWidgets.QMainWindow):
 
         self._transaction_page = transactions.TransactionPage()
 
+        self._currency_page = assets.CurrencyPage()
+
         #TODO: tr()
         self._pages = QtWidgets.QTabWidget()
         self._pages.addTab(self._account_page,     'Accounts')
         self._pages.addTab(self._transaction_page, 'Transactions')
+        self._pages.addTab(self._currency_page,    'Currencies')
 
         self.setCentralWidget(self._pages)
 
