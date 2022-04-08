@@ -15,6 +15,9 @@ class BalanceTreeItem:
         '_name',
         '_description',
         '_balance',
+        '_asset_code',
+        '_asset_symbol',
+        '_currency_prec',
         '_parent',
         '_children'
     )
@@ -25,15 +28,21 @@ class BalanceTreeItem:
                  name: str,
                  description: str,
                  balance: decimal.Decimal,
+                 asset_code: str,
+                 asset_symbol: typing.Optional[str],
+                 currency_precision: int,
                  parent: typing.Optional[BalanceTreeItem]
     ):
-        self._id          = id
-        self._type        = type
-        self._name        = name
-        self._description = description
-        self._balance     = balance
-        self._parent      = parent
-        self._children    = []
+        self._id            = id
+        self._type          = type
+        self._name          = name
+        self._description   = description
+        self._balance       = balance
+        self._asset_code    = asset_code
+        self._asset_symbol  = asset_symbol
+        self._currency_prec = currency_precision
+        self._parent        = parent
+        self._children      = []
 
     def id(self) -> int:
         return self._id
@@ -49,6 +58,15 @@ class BalanceTreeItem:
 
     def balance(self) -> decimal.Decimal:
         return self._balance
+
+    def assetCode(self) -> str:
+        return self._asset_code
+
+    def assetSymbol(self) -> typing.Optional[str]:
+        return self._asset_symbol
+
+    def currencyPrecision(self) -> int:
+        return self._currency_prec
 
     def cumulativeBalance(self) -> decimal.Decimal:
         balance = self._balance
@@ -121,33 +139,45 @@ class BalanceTreeModel(QtCore.QAbstractItemModel):
         with models.sql.get_session() as session:
             ################################################################################
             # WITH cte AS (
-            #   SELECT a.parent_id    AS parent_id,
-            #          a.id           AS id,
-            #          a.type         AS type,
-            #          a.name         AS name,
-            #          a.description  AS description
-            #     FROM subtransaction AS s
-            #     JOIN account        AS a ON s.origin_id = a.id
+            #   SELECT a.parent_id          AS parent_id,
+            #          a.id                 AS id,
+            #          a.type               AS type,
+            #          a.name               AS name,
+            #          a.description        AS description,
+            #          v.asset_code         AS asset_code,
+            #          v.asset_symbol       AS asset_symbol,
+            #          v.currency_precision AS currency_precision
+            #     FROM subtransaction     AS s
+            #     JOIN account            AS a ON s.origin_id = a.id
+            #     JOIN account_asset_view AS v ON a.id = v.account_id
             #    WHERE a.type in `account_types`
             #    UNION
-            #   SELECT a.parent_id    AS parent_id,
-            #          a.id           AS id,
-            #          a.type         AS type,
-            #          a.name         AS name,
-            #          a.description  AS description
-            #     FROM subtransaction AS s
-            #     JOIN account        AS a ON s.target_id = a.id
+            #   SELECT a.parent_id          AS parent_id,
+            #          a.id                 AS id,
+            #          a.type               AS type,
+            #          a.name               AS name,
+            #          a.description        AS description,
+            #          v.asset_code         AS asset_code,
+            #          v.asset_symbol       AS asset_symbol,
+            #          v.currency_precision AS currency_precision
+            #     FROM subtransaction     AS s
+            #     JOIN account            AS a ON s.target_id = a.id
+            #     JOIN account_asset_view AS v ON a.id = v.account_id
             #    WHERE a.type in `account_types`
             # )
             #    SELECT parent_id, id, type, name, description,
             #           (
             #             IFNULL((SELECT SUM(s.quantity) FROM subtransaction AS s WHERE s.target_id = cte.id GROUP BY s.target_id), 0) -
             #             IFNULL((SELECT SUM(s.quantity) FROM subtransaction AS s WHERE s.origin_id = cte.id GROUP BY s.origin_id), 0)
-            #           )
+            #           ),
+            #           asset_code,
+            #           asset_symbol
             #      FROM cte
             # UNION ALL
-            #    SELECT a.parent_id, a.id, a.type, a.name, a.description, 0
-            #      FROM account AS a
+            #    SELECT a.parent_id, a.id, a.type, a.name, a.description, 0,
+            #           v.asset_code, v.asset_symbol, v.currency_precision AS currency_precision
+            #      FROM account           AS a
+            #     JOIN account_asset_view AS v ON a.id = v.account_id
             #     WHERE a.type in `account_types`
             #       AND (SELECT COUNT() FROM subtransaction AS t WHERE t.origin_id = a.id) = 0
             #       AND (SELECT COUNT() FROM subtransaction AS t WHERE t.target_id = a.id) = 0
@@ -181,20 +211,29 @@ class BalanceTreeModel(QtCore.QAbstractItemModel):
             # All the accounts retrieved are filtered according to `account_types`.
             ################################################################################
 
-            S = sa.orm.aliased(models.Subtransaction, name='s')
-            A = sa.orm.aliased(models.Account,        name='a')
+            S = sa.orm.aliased(models.Subtransaction,   name='s')
+            A = sa.orm.aliased(models.Account,          name='a')
+            V = sa.orm.aliased(models.AccountAssetView, name='v')
 
             cte_stmt = sa.union(
                 (
-                    sa.select(A.parent_id, A.id, A.type, A.name, A.description)
+                    sa.select(
+                        A.parent_id, A.id, A.type, A.name, A.description,
+                        V.asset_code, V.asset_symbol, V.currency_precision
+                      )
                       .select_from(S)
                       .join(A, S.origin_id == A.id)
+                      .join(V, A.id == V.account_id)
                       .where(A.type.in_(account_types))
                 ),
                 (
-                    sa.select(A.parent_id, A.id, A.type, A.name, A.description)
+                    sa.select(
+                        A.parent_id, A.id, A.type, A.name, A.description,
+                        V.asset_code, V.asset_symbol, V.currency_precision
+                      )
                       .select_from(S)
                       .join(A, S.target_id == A.id)
+                      .join(V, A.id == V.account_id)
                       .where(A.type.in_(account_types))
                 )
             )
@@ -211,12 +250,20 @@ class BalanceTreeModel(QtCore.QAbstractItemModel):
                                 sa.func.ifnull(target_sum_stmt.scalar_subquery(), 0) -
                                 sa.func.ifnull(origin_sum_stmt.scalar_subquery(), 0),
                                 models.sql.Decimal(8)
-                              )
+                              ),
+                              cte.c.asset_code,
+                              cte.c.asset_symbol,
+                              cte.c.currency_precision
                       )
                       .select_from(cte)
                 ),
                 (
-                    sa.select(A.parent_id, A.id, A.type, A.name, A.description, sa.literal(0))
+                    sa.select(
+                        A.parent_id, A.id, A.type, A.name, A.description, sa.literal(0), 
+                        V.asset_code, V.asset_symbol, V.currency_precision
+                      )
+                      .select_from(A)
+                      .join(V, A.id == V.account_id)
                       .where(A.type.in_(account_types))
                       .where(
                           sa.select(sa.func.count())
@@ -236,14 +283,14 @@ class BalanceTreeModel(QtCore.QAbstractItemModel):
             AccountGroup = models.AccountGroup
 
             for t in session.execute(stmt).all():
-                parent_id, id, type, name, desc, balance = t
+                parent_id, id, type, name, desc, balance, asset_code, asset_symbol, currency_precision = t
                 
                 account_group = AccountGroup.fromAccountType(type)
 
                 if account_group in (AccountGroup.Equity, AccountGroup.Income, AccountGroup.Liability) and balance != 0:
                     balance *= -1
 
-                balance_info[parent_id].append((id, type, name, desc, balance))
+                balance_info[parent_id].append((id, type, name, desc, balance, asset_code, asset_symbol, currency_precision))
 
         self.layoutAboutToBeChanged.emit()
         self._resetRootItem()
@@ -255,16 +302,16 @@ class BalanceTreeModel(QtCore.QAbstractItemModel):
                 except KeyError:
                     return
 
-                for id, type, name, desc, balance in info_list:
-                    child = BalanceTreeItem(id, type, name, desc, balance, item)
+                for info in info_list:
+                    child = BalanceTreeItem(*info, item)
                     
                     item.appendChild(child)
                     read_recursive(child)
 
             top_level_list = balance_info.pop(None)
 
-            for id, type, name, desc, balance in top_level_list:
-                child = BalanceTreeItem(id, type, name, desc, balance, self._root_item)
+            for info in top_level_list:
+                child = BalanceTreeItem(*info, self._root_item)
                 read_recursive(child)
 
                 self._root_item.appendChild(child)
@@ -287,7 +334,7 @@ class BalanceTreeModel(QtCore.QAbstractItemModel):
     # Internals
     ################################################################################
     def _resetRootItem(self):
-        self._root_item = BalanceTreeItem(0, models.AccountType.Equity, '', '', 0, None)
+        self._root_item = BalanceTreeItem(0, models.AccountType.Equity, '', '', 0, '', None, 0, None)
 
     ################################################################################
     # Overloaded methods
@@ -335,8 +382,19 @@ class BalanceTreeModel(QtCore.QAbstractItemModel):
         if   column == 0: return item.name()
         elif column == 1: return item.description()
         elif column == 2:
-            # TODO: maybe move summing logic to query when having to deal with currency rates.
-            return utils.short_format_number(item.cumulativeBalance(), 2)
+            balance = item.cumulativeBalance()
+
+            if item.type() == models.AccountType.Security:
+                balance = round(balance)
+            else:
+                balance = utils.short_format_number(balance, item.currencyPrecision())
+
+            asset_symbol = item.assetSymbol()
+
+            if asset_symbol:
+                return f'{asset_symbol} {balance}'
+            else:
+                return f'{balance} {item.assetCode()}'
         else:
             return None
 

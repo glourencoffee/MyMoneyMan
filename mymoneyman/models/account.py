@@ -71,9 +71,11 @@ class Account(models.sql.Base):
     name        = sa.Column(sa.String,            nullable=False)
     description = sa.Column(sa.String)
     parent_id   = sa.Column(sa.ForeignKey('account.id'))
+    currency_id = sa.Column(sa.ForeignKey('currency.id'))
+    security_id = sa.Column(sa.ForeignKey('security.id'))
 
     def __repr__(self) -> str:
-        return f"Account<id={self.id} name='{self.name}' type={self.type} parent_id={self.parent_id}>"
+        return f"Account<id={self.id} name='{self.name}' type={self.type} parent_id={self.parent_id} asset_id={self.asset_id}>"
 
 def _makeExtendedAccountViewStatement():
     # WITH RECURSIVE cte(id, type, description, parent_id, name, is_extended) AS
@@ -177,6 +179,79 @@ class ExtendedAccountView(models.sql.Base):
     name        = __table__.c.name
     description = __table__.c.description
     parent_id   = __table__.c.parent_id
+
+def _makeAccountAssetViewStatement():
+    # SELECT a.id        AS account_id,
+    #        NULL        AS asset_scope,
+    #        c.code      AS asset_code,
+    #        c.symbol    AS asset_symbol,
+    #        c.name      AS asset_name,
+    #        c.code      AS currency_code,
+    #        c.precision AS currency_precision,
+    #        c.is_fiat   AS currency_is_fiat
+    #   FROM account  AS a
+    #   JOIN currency AS c ON a.currency_id = c.id
+    #  UNION
+    # SELECT a.id        AS account_id,
+    #        s.mic       AS asset_scope,
+    #        s.code      AS asset_code,
+    #        NULL        AS asset_symbol,
+    #        s.name      AS asset_name,
+    #        c.code      AS currency_code,
+    #        c.precision AS currency_precision,
+    #        c.is_fiat   AS currency_is_fiat
+    #   FROM account  AS a
+    #   JOIN security AS s ON a.security_id = s.id
+    #   JOIN currency AS c ON s.currency_id = c.id
+
+    A = sa.orm.aliased(Account,         name='a')
+    C = sa.orm.aliased(models.Currency, name='c')
+    S = sa.orm.aliased(models.Security, name='s')
+
+    s1 = (
+        sa.select(
+            A.id.label('account_id'),
+            sa.literal(None).label('asset_scope'),
+            C.code.label('asset_code'),
+            C.symbol.label('asset_symbol'),
+            C.name.label('asset_name'),
+            C.code.label('currency_code'),
+            C.precision.label('currency_precision'),
+            C.is_fiat.label('currency_is_fiat')
+          )
+          .select_from(A)
+          .join(C, A.currency_id == C.id)
+    )
+    
+    s2 = (
+        sa.select(
+            A.id.label('account_id'),
+            S.mic.label('asset_scope'),
+            S.code.label('asset_code'),
+            sa.literal(None).label('asset_symbol'),
+            S.name.label('asset_name'),
+            C.code.label('currency_code'),
+            C.precision.label('currency_precision'),
+            C.is_fiat.label('currency_is_fiat')
+          )
+          .select_from(A)
+          .join(S, A.security_id == S.id)
+          .join(C, S.currency_id == C.id)
+    )
+
+    return s1.union(s2)
+
+class AccountAssetView(models.sql.Base):
+    __table__ = sa_utils.create_view('account_asset_view', _makeAccountAssetViewStatement(), models.sql.meta)
+
+    account_id         = __table__.c.account_id
+    asset_scope        = __table__.c.asset_scope
+    asset_code         = __table__.c.asset_code
+    asset_symbol       = __table__.c.asset_symbol
+    asset_name         = __table__.c.asset_name
+    currency_code      = __table__.c.currency_code
+    currency_precision = __table__.c.currency_precision
+    currency_is_fiat   = __table__.c.currency_is_fiat
 
 AccountInfo = collections.namedtuple('AccountInfo', ['id', 'name', 'type'])
 
@@ -400,7 +475,7 @@ class AccountTreeModel(QtCore.QAbstractItemModel):
 
             return result[0]
 
-    def addAccount(self, name: str, type: AccountType, description: str, parent_id: typing.Optional[int]) -> int:
+    def addAccount(self, name: str, type: AccountType, description: str, parent_id: typing.Optional[int], asset_id: int) -> int:
         """TODO"""
 
         if self.hasAccount(name, type, parent_id):
@@ -414,8 +489,12 @@ class AccountTreeModel(QtCore.QAbstractItemModel):
                 parent_id       = parent_id
             )
 
+            if type == AccountType.Security:
+                acc.security_id = asset_id
+            else:
+                acc.currency_id = asset_id
+
             session.add(acc)
-            session.flush([acc]) # We need the auto-incremented id.
             session.commit()
 
             self.layoutAboutToBeChanged.emit()

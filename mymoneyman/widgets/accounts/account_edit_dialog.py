@@ -2,9 +2,8 @@ import collections
 import decimal
 import enum
 import typing
-from PyQt5              import QtCore, QtGui, QtWidgets
-from mymoneyman.widgets import accounts as widgets
-from mymoneyman         import models
+from PyQt5      import QtCore, QtGui, QtWidgets
+from mymoneyman import models, widgets
 
 _GroupComboData = collections.namedtuple('_GroupComboData', ['account_group', 'account_type'])
 
@@ -32,16 +31,15 @@ class AccountEditDialog(QtWidgets.QDialog):
         self._desc_lbl = QtWidgets.QLabel('Description')
         self._desc_edit = QtWidgets.QLineEdit()
 
-        self._currency_lbl = QtWidgets.QLabel('Currency')
-        self._currency_combo = QtWidgets.QComboBox()
-        self._currency_combo.addItems(('USD', 'BRL', 'TRY', 'EUR'))
-
-        if self._mode == AccountEditDialog.EditionMode.Edition:
-            # TODO: check if there are any transactions for account, in which case, disable change of currency.
-            self._currency_combo.setEnabled(False)
-
         self._type_lbl   = QtWidgets.QLabel('Type')
         self._type_combo = QtWidgets.QComboBox()
+
+        self._asset_lbl = QtWidgets.QLabel('Currency')
+        self._asset_combo = widgets.assets.AssetCombo()
+
+        # if self._mode == AccountEditDialog.EditionMode.Edition:
+        #     # TODO: check if there are any transactions for account, in which case, disable change of currency.
+        #     self._currency_combo.setEnabled(False)
 
         for acc_type in models.AccountType:
             # TODO: tr()
@@ -58,7 +56,7 @@ class AccountEditDialog(QtWidgets.QDialog):
         self._previous_group_data = self._currentGroupData()
 
         self._parent_lbl  = QtWidgets.QLabel('Enclosed by')
-        self._parent_tree = widgets.AccountTreeWidget()
+        self._parent_tree = widgets.accounts.AccountTreeWidget()
         self._parent_tree.setHeaderHidden(True)
         self._parent_tree.model().select([self._currentGroupData().account_group])
 
@@ -77,10 +75,10 @@ class AccountEditDialog(QtWidgets.QDialog):
         main_layout.addWidget(self._name_edit)
         main_layout.addWidget(self._desc_lbl)
         main_layout.addWidget(self._desc_edit)
-        main_layout.addWidget(self._currency_lbl)
-        main_layout.addWidget(self._currency_combo)
         main_layout.addWidget(self._type_lbl)
         main_layout.addWidget(self._type_combo)
+        main_layout.addWidget(self._asset_lbl)
+        main_layout.addWidget(self._asset_combo)
         main_layout.addWidget(self._parent_lbl)
         main_layout.addWidget(self._parent_tree)
 
@@ -130,6 +128,13 @@ class AccountEditDialog(QtWidgets.QDialog):
             self._parent_tree.model().select([current_data.account_group])
             self._previous_group_data = current_data
 
+        if current_data.account_type == models.AccountType.Security:
+            self._asset_lbl.setText('Security')
+            self._asset_combo.setAssetType(widgets.assets.AssetCombo.AssetType.Security)
+        else:
+            self._asset_lbl.setText('Currency')
+            self._asset_combo.setAssetType(widgets.assets.AssetCombo.AssetType.Currency)
+
     @QtCore.pyqtSlot()
     def _onConfirmButtonClicked(self):
         account_type = self.accountType()
@@ -137,6 +142,7 @@ class AccountEditDialog(QtWidgets.QDialog):
         account_desc = self.accountDescription()
         parent_item  = self._parent_tree.currentItem()
         parent_id    = parent_item.id() if parent_item is not None else None
+        asset_id     = self._asset_combo.currentAssetId()
 
         model       = self._parent_tree.model()
         is_creation = self._mode == AccountEditDialog.EditionMode.Creation
@@ -154,7 +160,7 @@ class AccountEditDialog(QtWidgets.QDialog):
 
                 QtWidgets.QMessageBox.information(self, 'Account exists', description)
             else:
-                self._account_id = model.addAccount(account_name, account_type, account_desc, parent_id)
+                self._account_id = model.addAccount(account_name, account_type, account_desc, parent_id, asset_id)
 
                 if self._account_id != -1:
                     self.accept()
