@@ -17,12 +17,14 @@ class MainWindow(QtWidgets.QMainWindow):
         self._transaction_page = transactions.TransactionPage()
 
         self._currency_page = assets.CurrencyPage()
+        self._security_page = assets.SecurityPage()
 
         #TODO: tr()
         self._pages = QtWidgets.QTabWidget()
         self._pages.addTab(self._account_page,     'Accounts')
         self._pages.addTab(self._transaction_page, 'Transactions')
         self._pages.addTab(self._currency_page,    'Currencies')
+        self._pages.addTab(self._security_page,    'Securities')
 
         self.setCentralWidget(self._pages)
 
