@@ -1,5 +1,6 @@
 from mymoneyman.models                import sql
 from mymoneyman.models.currency       import Currency, CurrencyTableModel, CurrencyTableItem, CurrencyTableColumn
+from mymoneyman.models.security       import Security, SecurityType, SecurityTreeModel, SecurityTreeItem, SecurityTreeColumn
 from mymoneyman.models.account        import Account, AccountType, AccountGroup,\
                                              AccountTreeModel, AccountTreeItem, AccountInfo,\
                                              ExtendedAccountView, AccountListModel
