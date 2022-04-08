@@ -13,9 +13,11 @@ def short_format_number(number: decimal.Decimal, decimals: int = 0) -> str:
 
     try:
         letter = thousands_letter[thousands]
-        number = round(number / (1000 ** thousands), decimals)
+        number = number / (1000 ** thousands)
 
-        return f'{number}{letter}'
+        fmt = '{:.' + str(decimals) + 'f}'
+
+        return fmt.format(number)
 
     except IndexError:
         return round(number, decimals)
