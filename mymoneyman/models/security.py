@@ -33,6 +33,7 @@ class SecurityTreeItem:
     """Stores data for child indexes at the model class `SecurityTreeModel`."""
 
     __slots__ = (
+        '_id',
         '_mic',
         '_code',
         '_name',
@@ -41,13 +42,17 @@ class SecurityTreeItem:
         '_currency_code'
     )
 
-    def __init__(self, mic: str, code: str, name: str, isin: typing.Optional[str], type: SecurityType, currency_code: str):
+    def __init__(self, id: int, mic: str, code: str, name: str, isin: typing.Optional[str], type: SecurityType, currency_code: str):
+        self._id            = id
         self._mic           = mic
         self._code          = code
         self._name          = name
         self._isin          = isin
         self._type          = type
         self._currency_code = currency_code
+
+    def id(self) -> int:
+        return self._id
 
     def mic(self) -> str:
         return self._mic
@@ -80,7 +85,12 @@ class SecurityTreeItem:
             return None
 
     def __repr__(self) -> str:
-        return f"SecurityTreeItem<mic='{self._mic}' code='{self._code}' name='{self._name}' type={self._type} currency={self._currency_code}>"
+        return (
+            "SecurityTreeItem<"
+            f"id={self._id} mic='{self._mic}' code='{self._code}' "
+            f"name='{self._name}' type={self._type} currency={self._currency_code}"
+            ">"
+        )
 
 class SecurityTreeTopLevelItem:
     """
@@ -168,6 +178,7 @@ class SecurityTreeModel(QtCore.QAbstractItemModel):
 
             stmt = (
                 sa.select(
+                    S.id,
                     S.mic,
                     S.code,
                     S.name,
@@ -190,7 +201,7 @@ class SecurityTreeModel(QtCore.QAbstractItemModel):
             self.layoutAboutToBeChanged.emit()
 
             for res in results:
-                mic = res[0]
+                mic = res[1]
 
                 if current_market_item is None or current_market_item.mic() != mic:
                     current_market_item = SecurityTreeTopLevelItem(mic)
@@ -252,7 +263,7 @@ class SecurityTreeModel(QtCore.QAbstractItemModel):
                 self._top_level_items.append(parent_item)
                 self._top_level_items.sort(key=lambda item: item.mic())
 
-            child = SecurityTreeItem(mic, code, name, isin, type, currency_code)
+            child = SecurityTreeItem(security.id, mic, code, name, isin, type, currency_code)
 
             parent_item._addChild(child)
             parent_item._sort()
@@ -320,8 +331,8 @@ class SecurityTreeModel(QtCore.QAbstractItemModel):
     def marketCodes(self) -> typing.List[str]:
         return [item.mic() for item in self._top_level_items]
 
-    def isTopLevelIndex(self, index: QtCore.QModelIndex) -> bool:
-        return index.isValid() and not index.parent().isValid()
+    def topLevelItems(self) -> typing.List[SecurityTreeTopLevelItem]:
+        return self._top_level_items.copy()
 
     def itemFromIndex(self, index: QtCore.QModelIndex) -> typing.Union[SecurityTreeTopLevelItem, SecurityTreeItem, None]:
         if not index.isValid():
