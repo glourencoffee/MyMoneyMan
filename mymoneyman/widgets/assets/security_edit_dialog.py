@@ -28,6 +28,7 @@ class SecurityEditDialog(QtWidgets.QDialog):
 
         self._name_lbl = QtWidgets.QLabel('Name')
         self._name_edit = QtWidgets.QLineEdit()
+        self._name_edit.setPlaceholderText('Apple, Microsoft, Google...')
         self._name_edit.textEdited.connect(self._onNameTextEdited)
 
         self._mic_lbl = QtWidgets.QLabel('Market')
@@ -39,6 +40,7 @@ class SecurityEditDialog(QtWidgets.QDialog):
 
         self._code_lbl = QtWidgets.QLabel('Code')
         self._code_edit = QtWidgets.QLineEdit()
+        self._code_edit.setPlaceholderText('APPL, MSFT, GOOG...')
         self._code_edit.setValidator(alnum_validator)
         self._code_edit.textEdited.connect(self._onCodeTextEdited)
 

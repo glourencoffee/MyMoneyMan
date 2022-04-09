@@ -16,17 +16,20 @@ class CurrencyEditDialog(QtWidgets.QDialog):
 
         self._name_lbl = QtWidgets.QLabel('Name')
         self._name_edit = QtWidgets.QLineEdit()
+        self._name_edit.setPlaceholderText('Dollar, Euro, Bitcoin...')
 
         alnum_validator = QtGui.QRegExpValidator(QtCore.QRegExp('^[a-zA-Z0-9_]*$'))
 
         self._code_lbl = QtWidgets.QLabel('Code')
         self._code_edit = QtWidgets.QLineEdit()
+        self._code_edit.setPlaceholderText('USD, EUR, BTC...')
         self._code_edit.setValidator(alnum_validator)
         self._code_edit.setMaxLength(8)
         self._code_edit.textEdited.connect(self._onCodeTextEdited)
 
         self._symbol_lbl = QtWidgets.QLabel('Symbol')
         self._symbol_edit = QtWidgets.QLineEdit()
+        self._symbol_edit.setPlaceholderText('$, €, ₿...')
         self._symbol_edit.setMaxLength(5)
 
         self._precision_lbl = QtWidgets.QLabel('Precision')
