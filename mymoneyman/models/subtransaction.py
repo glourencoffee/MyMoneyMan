@@ -14,6 +14,7 @@ class Subtransaction(models.sql.Base):
     origin_id      = sa.Column(sa.ForeignKey('account.id'),     nullable=False)
     target_id      = sa.Column(sa.ForeignKey('account.id'),     nullable=False)
     quantity       = sa.Column(models.sql.Decimal(8),           nullable=False)
+    quote_price    = sa.Column(models.sql.Decimal(8),           nullable=False)
 
     transaction = sa.orm.relationship('Transaction', back_populates='subtransactions')
 
@@ -29,10 +30,12 @@ class Subtransaction(models.sql.Base):
         )
 
 class SubtransactionTableColumn(enum.IntEnum):
-    Comment  = 0
-    Origin   = 1
-    Target   = 2
-    Quantity = 3
+    Comment    = 0
+    Origin     = 1
+    Target     = 2
+    Quantity   = 3
+    QuotePrice = 4
+    TotalPrice = 5
 
 class SubtransactionTableItem:
     __slots__ = (
@@ -40,7 +43,8 @@ class SubtransactionTableItem:
         '_comment',
         '_origin',
         '_target',
-        '_quantity'
+        '_quantity',
+        '_quote_price'
     )
 
     def __init__(self,
@@ -48,13 +52,15 @@ class SubtransactionTableItem:
                  comment: typing.Optional[str],
                  origin: models.AccountInfo,
                  target: models.AccountInfo,
-                 quantity: decimal.Decimal
+                 quantity: decimal.Decimal,
+                 quote_price: decimal.Decimal
     ):
-        self._id       = id
-        self._comment  = comment
-        self._origin   = origin
-        self._target   = target
-        self._quantity = quantity
+        self._id          = id
+        self._comment     = comment
+        self._origin      = origin
+        self._target      = target
+        self._quantity    = quantity
+        self._quote_price = quote_price
 
     def id(self) -> typing.Optional[int]:
         """Returns the id of the subtransaction for persisted items."""
@@ -80,6 +86,11 @@ class SubtransactionTableItem:
         """Returns the amount transferred from the origin account to the target account."""
 
         return self._quantity
+
+    def quotePrice(self) -> decimal.Decimal:
+        """Returns the quote price in the target account's currency."""
+
+        return self._quote_price
 
     def isNew(self) -> bool:
         """Returns whether this item was created by user, as opposed to being returned from the database.
@@ -126,15 +137,22 @@ class SubtransactionTableItem:
 
     def data(self, column: SubtransactionTableColumn, role: int = QtCore.Qt.ItemDataRole.DisplayRole) -> typing.Any:
         if role == QtCore.Qt.ItemDataRole.DisplayRole:
-            if   column == SubtransactionTableColumn.Comment:  return self._comment
-            elif column == SubtransactionTableColumn.Origin:   return self._origin.name
-            elif column == SubtransactionTableColumn.Target:   return self._target.name
-            elif column == SubtransactionTableColumn.Quantity: return str(self._quantity) if self._quantity != 0 else None
+            if   column == SubtransactionTableColumn.Comment:    return self._comment
+            elif column == SubtransactionTableColumn.Origin:     return self._origin.name
+            elif column == SubtransactionTableColumn.Target:     return self._target.name
+            elif column == SubtransactionTableColumn.Quantity:   return str(self._quantity)    if self._quantity    != 0 else None
+            elif column == SubtransactionTableColumn.QuotePrice: return str(self._quote_price) if self._quote_price != 0 else None
+            elif column == SubtransactionTableColumn.TotalPrice:
+                total = round(self._quantity * self._quote_price, 8)
+
+                return str(total) if total != 0 else None
+                
         elif role == QtCore.Qt.ItemDataRole.EditRole:
-            if   column == SubtransactionTableColumn.Comment:  return self._comment
-            elif column == SubtransactionTableColumn.Origin:   return self._origin.id
-            elif column == SubtransactionTableColumn.Target:   return self._target.id
-            elif column == SubtransactionTableColumn.Quantity: return self._quantity
+            if   column == SubtransactionTableColumn.Comment:    return self._comment
+            elif column == SubtransactionTableColumn.Origin:     return self._origin.id
+            elif column == SubtransactionTableColumn.Target:     return self._target.id
+            elif column == SubtransactionTableColumn.Quantity:   return self._quantity
+            elif column == SubtransactionTableColumn.QuotePrice: return self._quote_price
 
         return None
     
@@ -148,10 +166,11 @@ class SubtransactionTableItem:
             return True
 
         elif role == QtCore.Qt.ItemDataRole.EditRole:
-            if   column == SubtransactionTableColumn.Comment  and isinstance(value, str): self._comment = value
-            elif column == SubtransactionTableColumn.Origin   and isinstance(value, int): self._origin = self._origin._replace(id=value)
-            elif column == SubtransactionTableColumn.Target   and isinstance(value, int): self._target = self._target._replace(id=value)
-            elif column == SubtransactionTableColumn.Quantity and isinstance(value, decimal.Decimal): self._quantity = round(value, 8)
+            if   column == SubtransactionTableColumn.Comment    and isinstance(value, str): self._comment = value
+            elif column == SubtransactionTableColumn.Origin     and isinstance(value, int): self._origin = self._origin._replace(id=value)
+            elif column == SubtransactionTableColumn.Target     and isinstance(value, int): self._target = self._target._replace(id=value)
+            elif column == SubtransactionTableColumn.Quantity   and isinstance(value, decimal.Decimal): self._quantity = round(value, 8)
+            elif column == SubtransactionTableColumn.QuotePrice and isinstance(value, decimal.Decimal): self._quote_price = round(value, 8)
             else:
                 return False
             
@@ -174,7 +193,7 @@ class _InsertableItem(SubtransactionTableItem):
     def __init__(self):
         account = models.AccountInfo(0, '', models.AccountType.Asset)
 
-        super().__init__(None, '', account, account, decimal.Decimal(0))
+        super().__init__(None, '', account, account, decimal.Decimal(0), decimal.Decimal(0))
 
 class SubtransactionTableModel(QtCore.QAbstractTableModel):
     itemChanged = QtCore.pyqtSignal(int, SubtransactionTableItem)
@@ -200,7 +219,7 @@ class SubtransactionTableModel(QtCore.QAbstractTableModel):
 
     def select(self, transaction_id: int):
         with models.sql.get_session() as session:
-            # SELECT s.id, s.comment, s.quantity,
+            # SELECT s.id, s.comment, s.quantity, s.quote_price,
             #        o.id, o.name, o.type,
             #        t.id, t.name, t.type
             #   FROM subtransaction        AS s
@@ -208,13 +227,13 @@ class SubtransactionTableModel(QtCore.QAbstractTableModel):
             #   JOIN extended_account_view AS t ON s.target_id = t.id
             #  WHERE s.transaction_id = :transaction_id
 
-            S = sa.orm.aliased(Subtransaction,      name='s')
+            S = sa.orm.aliased(Subtransaction,             name='s')
             O = sa.orm.aliased(models.ExtendedAccountView, name='o')
             T = sa.orm.aliased(models.ExtendedAccountView, name='t')
 
             stmt = (
                 sa.select(
-                    S.id, S.comment, S.quantity,
+                    S.id, S.comment, S.quantity, S.quote_price,
                     O.id, O.name, O.type,
                     T.id, T.name, T.type
                   )
@@ -233,7 +252,7 @@ class SubtransactionTableModel(QtCore.QAbstractTableModel):
             self._items.clear()
 
             for (
-                sub_id, comment, quantity,
+                sub_id, comment, quantity, quote_price,
                 origin_id, origin_name, origin_type,
                 target_id, target_name, target_type
             ) in results:
@@ -244,7 +263,7 @@ class SubtransactionTableModel(QtCore.QAbstractTableModel):
                 origin_acc = models.AccountInfo(origin_id, origin_group.name + ':' + origin_name, origin_type)
                 target_acc = models.AccountInfo(target_id, target_group.name + ':' + target_name, target_type)
 
-                sub_item = SubtransactionTableItem(sub_id, comment, origin_acc, target_acc, quantity)
+                sub_item = SubtransactionTableItem(sub_id, comment, origin_acc, target_acc, quantity, quote_price)
 
                 self._items.append(sub_item)
 
@@ -269,7 +288,8 @@ class SubtransactionTableModel(QtCore.QAbstractTableModel):
                         comment        = item.comment(),
                         origin_id      = item.originAccount().id,
                         target_id      = item.targetAccount().id,
-                        quantity       = item.quantity()
+                        quantity       = item.quantity(),
+                        quote_price    = item.quotePrice()
                     )
 
                     session.add(s)
@@ -282,10 +302,11 @@ class SubtransactionTableModel(QtCore.QAbstractTableModel):
                         sa.update(Subtransaction)
                           .where(Subtransaction.id == item.id())
                           .values(
-                            comment   = item.comment(),
-                            origin_id = item.originAccount().id,
-                            target_id = item.targetAccount().id,
-                            quantity  = item.quantity()
+                            comment     = item.comment(),
+                            origin_id   = item.originAccount().id,
+                            target_id   = item.targetAccount().id,
+                            quantity    = item.quantity(),
+                            quote_price = item.quotePrice()
                           )
                     )
             
@@ -380,7 +401,13 @@ class SubtransactionTableModel(QtCore.QAbstractTableModel):
         return False
 
     def flags(self, index: QtCore.QModelIndex) -> QtCore.Qt.ItemFlags:
-        return super().flags(index) | QtCore.Qt.ItemFlag.ItemIsEditable
+        flags = super().flags(index)
+        column = SubtransactionTableColumn(index.column())
+        
+        if column != SubtransactionTableColumn.TotalPrice:
+            flags |= QtCore.Qt.ItemFlag.ItemIsEditable
+
+        return flags
 
     def headerData(self, section: int, orientation: QtCore.Qt.Orientation, role: int = QtCore.Qt.ItemDataRole.DisplayRole) -> typing.Any:
         if orientation == QtCore.Qt.Horizontal and role == QtCore.Qt.ItemDataRole.DisplayRole:

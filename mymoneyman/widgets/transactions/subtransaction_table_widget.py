@@ -16,6 +16,7 @@ class SubtransactionTableWidget(QtWidgets.QWidget):
         self._origin_account_delegate = widgets.common.AccountBoxDelegate()
         self._target_account_delegate = widgets.common.AccountBoxDelegate()
         self._quantity_delegate       = widgets.common.SpinBoxDelegate()
+        self._quote_price_delegate    = widgets.common.SpinBoxDelegate()
 
         self._view = QtWidgets.QTableView()
         self._view.setSelectionMode(QtWidgets.QTableView.SelectionMode.SingleSelection)
@@ -25,9 +26,10 @@ class SubtransactionTableWidget(QtWidgets.QWidget):
         Column = models.SubtransactionTableColumn
 
         self._view.setModel(model)
-        self._view.setItemDelegateForColumn(Column.Origin,   self._origin_account_delegate)
-        self._view.setItemDelegateForColumn(Column.Target,   self._target_account_delegate)
-        self._view.setItemDelegateForColumn(Column.Quantity, self._quantity_delegate)
+        self._view.setItemDelegateForColumn(Column.Origin,     self._origin_account_delegate)
+        self._view.setItemDelegateForColumn(Column.Target,     self._target_account_delegate)
+        self._view.setItemDelegateForColumn(Column.Quantity,   self._quantity_delegate)
+        self._view.setItemDelegateForColumn(Column.QuotePrice, self._quote_price_delegate)
 
     def _initLayouts(self):
         main_layout = QtWidgets.QVBoxLayout()

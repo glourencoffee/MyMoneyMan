@@ -387,7 +387,7 @@ def _makeSelectTransactionStatement(account_id: int, transaction_id: typing.Opti
     ################################################################################
     #   SELECT *
     #     FROM (
-    #   SELECT t.id, t.date, s.id AS sub_id, s.comment, -s.quantity,
+    #   SELECT t.id, t.date, s.id AS sub_id, s.comment, -s.quantity AS quantity, s.quote_price,
     #          target.id   AS acc_id,
     #          target.type AS acc_type,
     #          target.name AS acc_name
@@ -397,7 +397,7 @@ def _makeSelectTransactionStatement(account_id: int, transaction_id: typing.Opti
     #     JOIN extended_account_view AS target ON s.target_id      = target.id
     #    WHERE origin.id = :account_id [AND transaction = :transaction_id]
     #    UNION
-    #   SELECT t.id, t.date, s.id AS sub_id, s.comment, s.quantity,
+    #   SELECT t.id, t.date, s.id AS sub_id, s.comment, s.quantity, 1.0 as quote_price
     #          origin.id   AS acc_id,
     #          origin.type AS acc_type,
     #          origin.name AS acc_name
@@ -423,6 +423,7 @@ def _makeSelectTransactionStatement(account_id: int, transaction_id: typing.Opti
             S.id.label('sub_id'),
             S.comment,
             (-S.quantity).label('quantity'),
+            S.quote_price.label('quote_price'),
             XTarget.id.label('acc_id'),
             XTarget.type.label('acc_type'),
             XTarget.name.label('acc_name')
@@ -441,6 +442,7 @@ def _makeSelectTransactionStatement(account_id: int, transaction_id: typing.Opti
             S.id.label('sub_id'),
             S.comment,
             S.quantity.label('quantity'),
+            sa.literal(1).label('quote_price'),
             XOrigin.id.label('acc_id'),
             XOrigin.type.label('acc_type'),
             XOrigin.name.label('acc_name')
@@ -541,12 +543,12 @@ class TransactionTableModel(QtCore.QAbstractTableModel):
             stmt   =_makeSelectTransactionStatement(account_id)
             result = session.execute(stmt).all()
 
-            for (tra_id, tra_date, sub_id, comment, quantity, acc_id, acc_type, acc_name) in result:
+            for (tra_id, tra_date, sub_id, comment, quantity, quote_price, acc_id, acc_type, acc_name) in result:
                 group        = models.AccountGroup.fromAccountType(acc_type)
                 acc_ext_name = group.name + ':' + acc_name
                 transfer_acc = models.AccountInfo(acc_id, acc_ext_name, acc_type)
 
-                transactions[(tra_id, tra_date)].append((sub_id, comment, transfer_acc, quantity))
+                transactions[(tra_id, tra_date)].append((sub_id, comment, transfer_acc, quantity * quote_price))
         
         self.layoutAboutToBeChanged.emit()
         
@@ -583,7 +585,7 @@ class TransactionTableModel(QtCore.QAbstractTableModel):
             if account_group in (AccountGroup.Equity, AccountGroup.Income, AccountGroup.Liability):
                 balance -= quantity
             else:
-                balance += quantity
+                balance += decimal.Decimal(quantity)
 
             transaction_item = TransactionTableItem(
                 id                   = transaction_id,
@@ -619,7 +621,7 @@ class TransactionTableModel(QtCore.QAbstractTableModel):
             stmt   = _makeSelectTransactionStatement(self._account.id, transaction_item.id())
             result = session.execute(stmt).all()
 
-            for (tra_id, tra_date, sub_id, comment, quantity, acc_id, acc_type, acc_name) in result:
+            for (tra_id, tra_date, sub_id, comment, quantity, quote_price, acc_id, acc_type, acc_name) in result:
                 transaction_id   = tra_id
                 transaction_date = tra_date
 
@@ -627,7 +629,7 @@ class TransactionTableModel(QtCore.QAbstractTableModel):
                 acc_ext_name = group.name + ':' + acc_name
                 transfer_acc = models.AccountInfo(acc_id, acc_ext_name, acc_type)
 
-                subtransactions.append((sub_id, comment, transfer_acc, quantity))
+                subtransactions.append((sub_id, comment, transfer_acc, quantity * quote_price))
 
         if len(subtransactions) == 1:
             sub_id, comment, transfer_account, quantity = subtransactions[0]
