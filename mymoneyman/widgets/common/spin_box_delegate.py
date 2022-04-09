@@ -5,14 +5,15 @@ from PyQt5 import QtCore, QtWidgets
 class SpinBoxDelegate(QtWidgets.QStyledItemDelegate):
     def __init__(self, parent: typing.Optional[QtCore.QObject] = None):
         super().__init__(parent)
-    
+
     def createEditor(self,
                      parent: QtWidgets.QWidget,
                      option: QtWidgets.QStyleOptionViewItem,
                      index: QtCore.QModelIndex
     ):
         editor = QtWidgets.QDoubleSpinBox(parent)
-        editor.setPrefix(editor.locale().currencySymbol() + ' ')
+        editor.setPrefix('')
+        editor.setSuffix('')
         editor.setMinimum(float('-inf'))
         editor.setMaximum(float('inf'))
         editor.setButtonSymbols(QtWidgets.QDoubleSpinBox.ButtonSymbols.NoButtons)
