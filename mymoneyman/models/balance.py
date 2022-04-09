@@ -1,10 +1,16 @@
 from __future__ import annotations
 import collections
 import decimal
+import enum
 import typing
 import sqlalchemy as sa
 from PyQt5      import QtCore
 from mymoneyman import utils, models
+
+class BalanceTreeColumn(enum.IntEnum):
+    Name        = 0
+    Description = 1
+    Balance     = 2
 
 class BalanceTreeItem:
     """Contains information of an item of `BalanceTreeModel`."""
@@ -99,6 +105,27 @@ class BalanceTreeItem:
             return 0
 
         return self._parent._children.index(self)
+
+    def data(self, column: BalanceTreeColumn, role: int = QtCore.Qt.ItemDataRole.DisplayRole) -> typing.Any:
+        if role != QtCore.Qt.ItemDataRole.DisplayRole:
+            return None
+
+        if   column == BalanceTreeColumn.Name:        return self._name
+        elif column == BalanceTreeColumn.Description: return self._description
+        elif column == BalanceTreeColumn.Balance:
+            balance = self.cumulativeBalance()
+
+            if self._type == models.AccountType.Security:
+                balance = round(balance)
+            else:
+                balance = utils.short_format_number(balance, self._currency_prec)
+
+            if self._asset_symbol:
+                return f'{self._asset_symbol} {balance}'
+            else:
+                return f'{balance} {self._asset_code}'
+        
+        return None
 
     def __repr__(self) -> str:
         if self._parent is None:
@@ -369,34 +396,12 @@ class BalanceTreeModel(QtCore.QAbstractItemModel):
             return self.createIndex(parent_item.row(), 0, parent_item)
 
     def data(self, index: QtCore.QModelIndex, role: int = QtCore.Qt.ItemDataRole.DisplayRole) -> typing.Any:
-        if role != QtCore.Qt.ItemDataRole.DisplayRole:
-            return None
-
         item = self.itemFromIndex(index)
 
         if item is None:
             return None
         
-        column = index.column()
-
-        if   column == 0: return item.name()
-        elif column == 1: return item.description()
-        elif column == 2:
-            balance = item.cumulativeBalance()
-
-            if item.type() == models.AccountType.Security:
-                balance = round(balance)
-            else:
-                balance = utils.short_format_number(balance, item.currencyPrecision())
-
-            asset_symbol = item.assetSymbol()
-
-            if asset_symbol:
-                return f'{asset_symbol} {balance}'
-            else:
-                return f'{balance} {item.assetCode()}'
-        else:
-            return None
+        return item.data(BalanceTreeColumn(index.column()), role)
 
     def flags(self, index: QtCore.QModelIndex) -> QtCore.Qt.ItemFlags:
         if not index.isValid():
@@ -406,7 +411,7 @@ class BalanceTreeModel(QtCore.QAbstractItemModel):
 
     def headerData(self, section: int, orientation: QtCore.Qt.Orientation, role: int = QtCore.Qt.ItemDataRole.DisplayRole) -> typing.Any:
         if orientation == QtCore.Qt.Horizontal and role == QtCore.Qt.ItemDataRole.DisplayRole:
-            return ('Name', 'Description', 'Balance')[section]
+            return BalanceTreeColumn(section).name
 
         return None
 
@@ -419,4 +424,4 @@ class BalanceTreeModel(QtCore.QAbstractItemModel):
         return parent_item.childCount()
 
     def columnCount(self, parent: QtCore.QModelIndex = QtCore.QModelIndex()) -> int:
-        return 3
+        return len(BalanceTreeColumn)
