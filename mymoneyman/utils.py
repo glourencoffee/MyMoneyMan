@@ -17,7 +17,7 @@ def short_format_number(number: decimal.Decimal, decimals: int = 0) -> str:
 
         fmt = '{:.' + str(decimals) + 'f}'
 
-        return fmt.format(number)
+        return fmt.format(number) + letter
 
     except IndexError:
         return round(number, decimals)
