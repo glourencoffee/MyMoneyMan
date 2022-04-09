@@ -191,10 +191,12 @@ class TransactionTableItem:
             return self._transfer_account
 
     def quantity(self) -> decimal.Decimal:
-        return self._quantity
+        # FIXME: use decimal places of reference account's asset
+        return round(self._quantity, 2)
 
     def balance(self) -> decimal.Decimal:
-        return self._balance
+        # FIXME: use decimal places of reference account's asset
+        return round(self._balance, 2)
 
     def isSplit(self) -> bool:
         return self._transfer_account is None
@@ -387,34 +389,30 @@ def _makeSelectTransactionStatement(account_id: int, transaction_id: typing.Opti
     ################################################################################
     #   SELECT *
     #     FROM (
-    #   SELECT t.id, t.date, s.id AS sub_id, s.comment, -s.quantity AS quantity, s.quote_price,
+    #   SELECT t.id, t.date, s.id AS sub_id, s.comment, s.quantity, s.quote_price, -1 AS side
     #          target.id   AS acc_id,
     #          target.type AS acc_type,
     #          target.name AS acc_name
     #     FROM subtransaction        AS s
     #     JOIN "transaction"         AS t      ON s.transaction_id = t.id
-    #     JOIN account               AS origin ON s.origin_id      = origin.id
     #     JOIN extended_account_view AS target ON s.target_id      = target.id
-    #    WHERE origin.id = :account_id [AND transaction = :transaction_id]
+    #    WHERE s.origin_id = :account_id [AND transaction = :transaction_id]
     #    UNION
-    #   SELECT t.id, t.date, s.id AS sub_id, s.comment, s.quantity, 1.0 as quote_price
+    #   SELECT t.id, t.date, s.id AS sub_id, s.comment, s.quantity, 1 AS quote_price, 1 AS side
     #          origin.id   AS acc_id,
     #          origin.type AS acc_type,
     #          origin.name AS acc_name
     #     FROM subtransaction        AS s
     #     JOIN "transaction"         AS t      ON s.transaction_id = t.id
     #     JOIN extended_account_view AS origin ON s.origin_id      = origin.id
-    #     JOIN account               AS target ON s.target_id      = target.id
-    #    WHERE target.id = :account_id [AND transaction = :transaction_id]
+    #    WHERE s.target_id = :account_id [AND transaction = :transaction_id]
     # ) AS u
     # ORDER BY u.date, u.id ASC
     ################################################################################
-    S       = sa.orm.aliased(models.Subtransaction,      name='s')
-    T       = sa.orm.aliased(Transaction,                name='t')
-    Origin  = sa.orm.aliased(models.Account,             name='origin')
-    Target  = sa.orm.aliased(models.Account,             name='target')
-    XOrigin = sa.orm.aliased(models.ExtendedAccountView, name='origin')
-    XTarget = sa.orm.aliased(models.ExtendedAccountView, name='target')
+    S      = sa.orm.aliased(models.Subtransaction,      name='s')
+    T      = sa.orm.aliased(Transaction,                name='t')
+    Origin = sa.orm.aliased(models.ExtendedAccountView, name='origin')
+    Target = sa.orm.aliased(models.ExtendedAccountView, name='target')
 
     upper_select = (
         sa.select(
@@ -422,17 +420,17 @@ def _makeSelectTransactionStatement(account_id: int, transaction_id: typing.Opti
             T.date,
             S.id.label('sub_id'),
             S.comment,
-            (-S.quantity).label('quantity'),
-            S.quote_price.label('quote_price'),
-            XTarget.id.label('acc_id'),
-            XTarget.type.label('acc_type'),
-            XTarget.name.label('acc_name')
+            S.quantity,
+            S.quote_price,
+            sa.literal(-1).label('side'),
+            Target.id.label('acc_id'),
+            Target.type.label('acc_type'),
+            Target.name.label('acc_name')
         )
         .select_from(S)
-        .join(T,       S.transaction_id == T.id)
-        .join(Origin,  S.origin_id      == Origin.id)
-        .join(XTarget, S.target_id      == XTarget.id)
-        .where(Origin.id == account_id)
+        .join(T,      S.transaction_id == T.id)
+        .join(Target, S.target_id      == Target.id)
+        .where(S.origin_id == account_id)
     )
 
     lower_select = (
@@ -441,17 +439,17 @@ def _makeSelectTransactionStatement(account_id: int, transaction_id: typing.Opti
             T.date,
             S.id.label('sub_id'),
             S.comment,
-            S.quantity.label('quantity'),
+            S.quantity,
             sa.literal(1).label('quote_price'),
-            XOrigin.id.label('acc_id'),
-            XOrigin.type.label('acc_type'),
-            XOrigin.name.label('acc_name')
+            sa.literal(1).label('side'),
+            Origin.id.label('acc_id'),
+            Origin.type.label('acc_type'),
+            Origin.name.label('acc_name')
         )
         .select_from(S)
-        .join(T,       S.transaction_id == T.id)
-        .join(XOrigin, S.origin_id      == XOrigin.id)
-        .join(Target,  S.target_id      == Target.id)
-        .where(Target.id == account_id)
+        .join(T,      S.transaction_id == T.id)
+        .join(Origin, S.origin_id      == Origin.id)
+        .where(S.target_id == account_id)
     )
 
     if transaction_id is not None:
@@ -543,12 +541,15 @@ class TransactionTableModel(QtCore.QAbstractTableModel):
             stmt   =_makeSelectTransactionStatement(account_id)
             result = session.execute(stmt).all()
 
-            for (tra_id, tra_date, sub_id, comment, quantity, quote_price, acc_id, acc_type, acc_name) in result:
+            for (tra_id, tra_date, sub_id, comment, quantity, quote_price, side, acc_id, acc_type, acc_name) in result:
                 group        = models.AccountGroup.fromAccountType(acc_type)
                 acc_ext_name = group.name + ':' + acc_name
                 transfer_acc = models.AccountInfo(acc_id, acc_ext_name, acc_type)
 
-                transactions[(tra_id, tra_date)].append((sub_id, comment, transfer_acc, quantity * quote_price))
+                quote_price = decimal.Decimal(quote_price)
+                quantity    = decimal.Decimal(quantity) * side * quote_price
+
+                transactions[(tra_id, tra_date)].append((sub_id, comment, transfer_acc, quantity))
         
         self.layoutAboutToBeChanged.emit()
         
@@ -621,7 +622,7 @@ class TransactionTableModel(QtCore.QAbstractTableModel):
             stmt   = _makeSelectTransactionStatement(self._account.id, transaction_item.id())
             result = session.execute(stmt).all()
 
-            for (tra_id, tra_date, sub_id, comment, quantity, quote_price, acc_id, acc_type, acc_name) in result:
+            for (tra_id, tra_date, sub_id, comment, quantity, quote_price, side, acc_id, acc_type, acc_name) in result:
                 transaction_id   = tra_id
                 transaction_date = tra_date
 
@@ -629,7 +630,10 @@ class TransactionTableModel(QtCore.QAbstractTableModel):
                 acc_ext_name = group.name + ':' + acc_name
                 transfer_acc = models.AccountInfo(acc_id, acc_ext_name, acc_type)
 
-                subtransactions.append((sub_id, comment, transfer_acc, quantity * quote_price))
+                quote_price = decimal.Decimal(quote_price)
+                quantity    = decimal.Decimal(quantity) * side * quote_price
+
+                subtransactions.append((sub_id, comment, transfer_acc, quantity))
 
         if len(subtransactions) == 1:
             sub_id, comment, transfer_account, quantity = subtransactions[0]
@@ -881,12 +885,15 @@ class TransactionTableModel(QtCore.QAbstractTableModel):
     def _insertDraft(self):
         item = self._draft_item.copy(self._account)
 
+        print('insertDraft(): originAccount ==', item.originAccount(), 'targetAccount ==', item.targetAccount())
+
         with models.sql.get_session() as session:
             s = models.Subtransaction(
-                comment   = item.comment(),
-                origin_id = item.originAccount().id,
-                target_id = item.targetAccount().id,
-                quantity  = item.quantity()
+                comment     = item.comment(),
+                origin_id   = item.originAccount().id,
+                target_id   = item.targetAccount().id,
+                quantity    = abs(item.quantity()),
+                quote_price = decimal.Decimal(1)
             )
                 
             t = Transaction(date=item.date(), subtransactions=[s])
@@ -932,7 +939,7 @@ class TransactionTableModel(QtCore.QAbstractTableModel):
                         comment   = item.comment(),
                         origin_id = item.originAccount().id,
                         target_id = item.targetAccount().id,
-                        quantity  = item.quantity()
+                        quantity  = abs(item.quantity())
                     )
             )
 

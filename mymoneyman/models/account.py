@@ -182,6 +182,8 @@ class ExtendedAccountView(models.sql.Base):
 
 def _makeAccountAssetViewStatement():
     # SELECT a.id        AS account_id,
+    #        c.id        AS asset_id,
+    #        TRUE        AS asset_is_currency,
     #        NULL        AS asset_scope,
     #        c.code      AS asset_code,
     #        c.symbol    AS asset_symbol,
@@ -193,6 +195,8 @@ def _makeAccountAssetViewStatement():
     #   JOIN currency AS c ON a.currency_id = c.id
     #  UNION
     # SELECT a.id        AS account_id,
+    #        s.id        AS asset_id,
+    #        FALSE       AS asset_is_currency,
     #        s.mic       AS asset_scope,
     #        s.code      AS asset_code,
     #        NULL        AS asset_symbol,
@@ -211,6 +215,8 @@ def _makeAccountAssetViewStatement():
     s1 = (
         sa.select(
             A.id.label('account_id'),
+            C.id.label('asset_id'),
+            sa.literal(True).label('asset_is_currency'),
             sa.literal(None).label('asset_scope'),
             C.code.label('asset_code'),
             C.symbol.label('asset_symbol'),
@@ -226,6 +232,8 @@ def _makeAccountAssetViewStatement():
     s2 = (
         sa.select(
             A.id.label('account_id'),
+            S.id.label('asset_id'),
+            sa.literal(False).label('asset_is_currency'),
             S.mic.label('asset_scope'),
             S.code.label('asset_code'),
             sa.literal(None).label('asset_symbol'),
@@ -245,6 +253,8 @@ class AccountAssetView(models.sql.Base):
     __table__ = sa_utils.create_view('account_asset_view', _makeAccountAssetViewStatement(), models.sql.meta)
 
     account_id         = __table__.c.account_id
+    asset_id           = __table__.c.asset_id
+    asset_is_currency  = __table__.c.asset_is_currency
     asset_scope        = __table__.c.asset_scope
     asset_code         = __table__.c.asset_code
     asset_symbol       = __table__.c.asset_symbol

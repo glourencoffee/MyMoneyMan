@@ -13,8 +13,8 @@ class Subtransaction(models.sql.Base):
     comment        = sa.Column(sa.String)
     origin_id      = sa.Column(sa.ForeignKey('account.id'),     nullable=False)
     target_id      = sa.Column(sa.ForeignKey('account.id'),     nullable=False)
-    quantity       = sa.Column(models.sql.Decimal(8),           nullable=False)
-    quote_price    = sa.Column(models.sql.Decimal(8),           nullable=False)
+    quantity       = sa.Column(models.sql.Decimal,              nullable=False)
+    quote_price    = sa.Column(models.sql.Decimal,              nullable=False)
 
     transaction = sa.orm.relationship('Transaction', back_populates='subtransactions')
 
