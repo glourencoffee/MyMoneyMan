@@ -54,7 +54,7 @@ class TransactionType(enum.IntEnum):
 
         elif origin_type == T.Asset:
             if   target_type in (T.Cash, T.Bank, T.Asset): return TransactionType.AssetTransfer
-            elif target_type == T.Security:                return TransactionType.Divestment
+            elif target_type == T.Security:                return TransactionType.Investment
             elif target_type == T.Expense:                 return TransactionType.Expense
             elif target_type in (T.Liability, T.CreditCard):
                 return TransactionType.Repayment
