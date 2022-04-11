@@ -78,18 +78,17 @@ class Account(models.sql.Base):
         return f"Account<id={self.id} name='{self.name}' type={self.type} parent_id={self.parent_id} asset_id={self.asset_id}>"
 
 def _makeExtendedAccountViewStatement():
-    # WITH RECURSIVE cte(id, type, description, parent_id, name, is_extended) AS
+    # WITH RECURSIVE cte(id, type, description, parent_id, name) AS
     # (
-    #   SELECT id, type, description, parent_id, name, FALSE
+    #   SELECT id, type, description, parent_id, name
     #     FROM account
+    #    WHERE parent_is IS NULL
     #    UNION
-    #   SELECT c.id, c.type, c.description, c.parent_id, p.name || ':' || c.name, TRUE
+    #   SELECT c.id, c.type, c.description, c.parent_id, p.name || ':' || c.name
     #     FROM cte     AS p
     #     JOIN account AS c ON c.parent_id = p.id
     # )
-    # SELECT id, type, name, description, parent_id
-    #   FROM cte
-    #  WHERE parent_id IS NULL OR is_extended IS TRUE
+    # SELECT * FROM cte
 
     A = Account
 
@@ -99,14 +98,14 @@ def _makeExtendedAccountViewStatement():
             A.type,
             A.description,
             A.parent_id,
-            A.name,
-            sa.literal(False).label('is_extended')
+            A.name
         )
+        .where(A.parent_id == None)
         .cte('cte', recursive=True)
     )
 
-    parent   = sa.orm.aliased(top_stmt)
-    Child: A = sa.orm.aliased(A)
+    Parent = sa.orm.aliased(top_stmt, name='p')
+    Child  = sa.orm.aliased(A,        name='c')
 
     cte = top_stmt.union(
         sa.select(
@@ -114,21 +113,13 @@ def _makeExtendedAccountViewStatement():
             Child.type,
             Child.description,
             Child.parent_id,
-            (parent.c.name + sa.literal(':') + Child.name).label('name'),
-            sa.literal(True).label('is_extended')
+            (Parent.c.name + sa.literal(':') + Child.name).label('name')
         )
-        .join(parent, Child.parent_id == parent.c.id)
+        .select_from(Parent)
+        .join(Child, Parent.c.id == Child.parent_id)
     )
 
-    stmt = (
-        sa.select(cte.c.id, cte.c.type, cte.c.name, cte.c.description, cte.c.parent_id)
-          .where(
-              sa.or_(
-                  cte.c.parent_id == None,
-                  cte.c.is_extended == True
-              )
-          )
-    )
+    stmt = cte.select()
 
     return stmt
 
