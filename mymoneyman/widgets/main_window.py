@@ -18,6 +18,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
         self._currency_page = assets.CurrencyPage()
         self._security_page = assets.SecurityPage()
+        self._quote_page    = assets.QuoteTreeWidget()
 
         #TODO: tr()
         self._pages = QtWidgets.QTabWidget()
@@ -25,6 +26,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self._pages.addTab(self._transaction_page, 'Transactions')
         self._pages.addTab(self._currency_page,    'Currencies')
         self._pages.addTab(self._security_page,    'Securities')
+        self._pages.addTab(self._quote_page,       'Quotes')
 
         self.setCentralWidget(self._pages)
 

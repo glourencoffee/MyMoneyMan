@@ -5,3 +5,4 @@ from mymoneyman.widgets.assets.currency_page         import CurrencyPage
 from mymoneyman.widgets.assets.security_edit_dialog  import SecurityEditDialog
 from mymoneyman.widgets.assets.security_tree_widget  import SecurityTreeWidget
 from mymoneyman.widgets.assets.security_page         import SecurityPage
+from mymoneyman.widgets.assets.quote_tree_widget     import QuoteTreeWidget
