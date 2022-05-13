@@ -4,7 +4,7 @@ from PyQt5 import QtCore, QtWidgets
 
 class SpinBoxDelegate(QtWidgets.QStyledItemDelegate):
     def __init__(self, parent: typing.Optional[QtCore.QObject] = None):
-        super().__init__(parent)
+        super().__init__(parent=parent)
 
     def createEditor(self,
                      parent: QtWidgets.QWidget,
@@ -29,10 +29,13 @@ class SpinBoxDelegate(QtWidgets.QStyledItemDelegate):
         if value is None:
             value = 0
 
+        value = round(value, editor.decimals())
+
         editor.setValue(float(value))
 
     def setModelData(self, editor: QtWidgets.QDoubleSpinBox, model: QtCore.QAbstractItemModel, index: QtCore.QModelIndex):
         value = decimal.Decimal(editor.value())
+        value = round(value, editor.decimals())
 
         model.setData(index, value, QtCore.Qt.ItemDataRole.EditRole)
 

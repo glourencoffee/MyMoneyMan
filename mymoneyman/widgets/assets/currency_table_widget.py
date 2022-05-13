@@ -4,17 +4,15 @@ from mymoneyman import models
 
 class CurrencyTableWidget(QtWidgets.QWidget):
     def __init__(self, parent: typing.Optional[QtWidgets.QWidget] = None):
-        super().__init__(parent)
+        super().__init__(parent=parent)
 
         self._initWidgets()
         self._initLayouts()
 
     def _initWidgets(self):
-        model = models.CurrencyTableModel()
-        model.select()
-
         self._view = QtWidgets.QTableView()
-        self._view.setModel(model)
+        self._view.setModel(models.CurrencySortFilterProxyModel())
+        self._view.verticalHeader().setVisible(False)
     
     def _initLayouts(self):
         main_layout = QtWidgets.QVBoxLayout()
@@ -23,5 +21,8 @@ class CurrencyTableWidget(QtWidgets.QWidget):
     
         self.setLayout(main_layout)
 
-    def model(self) -> models.CurrencyTableModel:
+    def setSourceModel(self, model: models.CurrencyTableModel):
+        self.model().setCurrencyModel(model)
+
+    def model(self) -> models.CurrencySortFilterProxyModel:
         return self._view.model()

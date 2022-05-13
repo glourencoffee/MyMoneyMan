@@ -4,7 +4,7 @@ from mymoneyman import models
 
 class QuoteTreeWidget(QtWidgets.QWidget):
     def __init__(self, parent: typing.Optional[QtWidgets.QWidget] = None):
-        super().__init__(parent)
+        super().__init__(parent=parent)
 
         self._initWidgets()
         self._initLayouts()
@@ -12,7 +12,6 @@ class QuoteTreeWidget(QtWidgets.QWidget):
     def _initWidgets(self):
         self._view = QtWidgets.QTreeView()
         self._view.setModel(models.QuoteTreeModel())
-        self.model().select()
     
     def _initLayouts(self):
         main_layout = QtWidgets.QVBoxLayout()

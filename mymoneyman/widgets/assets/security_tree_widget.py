@@ -4,14 +4,14 @@ from mymoneyman import models
 
 class SecurityTreeWidget(QtWidgets.QWidget):
     def __init__(self, parent: typing.Optional[QtWidgets.QWidget] = None):
-        super().__init__(parent)
+        super().__init__(parent=parent)
 
         self._initWidgets()
         self._initLayouts()
 
     def _initWidgets(self):
         self._view = QtWidgets.QTreeView()
-        self._view.setModel(models.SecurityTreeModel())
+        self._view.setModel(models.SecurityTreeProxyModel())
     
     def _initLayouts(self):
         main_layout = QtWidgets.QVBoxLayout()
@@ -19,6 +19,9 @@ class SecurityTreeWidget(QtWidgets.QWidget):
         main_layout.setContentsMargins(QtCore.QMargins())
     
         self.setLayout(main_layout)
+
+    def setSourceModel(self, model: models.SecurityTableModel):
+        self.model().setSourceModel(model)
 
     def expandAll(self):
         self._view.expandAll()
@@ -29,5 +32,5 @@ class SecurityTreeWidget(QtWidgets.QWidget):
     def currentIndex(self) -> QtCore.QModelIndex:
         return self._view.currentIndex()
 
-    def model(self) -> models.SecurityTreeModel:
+    def model(self) -> models.SecurityTreeProxyModel:
         return self._view.model()

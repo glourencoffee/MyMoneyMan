@@ -1,29 +1,32 @@
 import functools
+import sqlalchemy as sa
+import sqlalchemy.orm
 import typing
-from PyQt5              import QtCore, QtGui, QtWidgets
-from mymoneyman.widgets import accounts as widgets
-from mymoneyman         import models
+from PyQt5      import QtCore, QtGui, QtWidgets
+from mymoneyman import widgets, models
 
 class AccountPage(QtWidgets.QWidget):
-    accountCreated       = QtCore.pyqtSignal(int)
-    accountDeleted       = QtCore.pyqtSignal(int)
-    accountEdited        = QtCore.pyqtSignal(int)
-    accountDoubleClicked = QtCore.pyqtSignal(int)
+    accountCreated       = QtCore.pyqtSignal(models.Account)
+    accountDeleted       = QtCore.pyqtSignal(models.Account)
+    accountEdited        = QtCore.pyqtSignal(models.Account)
+    accountClicked       = QtCore.pyqtSignal(models.Account)
+    accountDoubleClicked = QtCore.pyqtSignal(models.Account)
 
     def __init__(self, parent: typing.Optional[QtWidgets.QWidget] = None):
-        super().__init__(parent)
+        super().__init__(parent=parent)
 
-        models.sql.set_engine('m3db.sqlite3')
+        self._account_table_model = models.AccountTableModel()
 
         self._initWidgets()
         self._initLayouts()
     
     def _initWidgets(self):
         self._initToolBar()
-        self._balance_box = widgets.BalanceBox()
-        self._balance_box.expandAll()
-        self._balance_box.currentChanged.connect(self._onCurrentTreeItemChanged)
-        self._balance_box.doubleClicked.connect(self._onTreeDoubleClicked)
+        self._account_tree_box = widgets.AccountTreeBox()
+        self._account_tree_box.setModel(self._account_table_model)
+        self._account_tree_box.expandAll()
+        self._account_tree_box.currentChanged.connect(self._onAccountTreeBoxCurrentChanged)
+        self._account_tree_box.doubleClicked.connect(self._onAccountTreeBoxDoubleClicked)
 
     def _initToolBar(self):
         self._tool_bar = QtWidgets.QToolBar()
@@ -44,81 +47,77 @@ class AccountPage(QtWidgets.QWidget):
     def _initLayouts(self):
         main_layout = QtWidgets.QVBoxLayout()
         main_layout.addWidget(self._tool_bar)
-        main_layout.addWidget(self._balance_box)
+        main_layout.addWidget(self._account_tree_box)
         main_layout.setAlignment(QtCore.Qt.AlignmentFlag.AlignTop)
 
         self.setLayout(main_layout)
 
+    def setSession(self, session: sa.orm.Session):
+        self._account_table_model.select(session)
+
+    def refresh(self):
+        self._account_tree_box.refreshBalances()
+
     @QtCore.pyqtSlot()
     def _onListLayoutAction(self):
-        self._balance_box.setListLayout()
+        self._account_tree_box.setListLayout()
 
     @QtCore.pyqtSlot()
     def _onGridLayoutAction(self):
-        self._balance_box.setGridLayout()
+        self._account_tree_box.setGridLayout()
 
     @QtCore.pyqtSlot()
     def _onAddAccountAction(self):
         # TODO: tr()
-        dialog = widgets.AccountEditDialog(widgets.AccountEditDialog.EditionMode.Creation, self)
+        dialog = widgets.AccountEditDialog(self._account_table_model, self)
 
         if dialog.exec():
-            account_type  = dialog.accountType()
-            account_group = models.AccountGroup.fromAccountType(account_type)
-
-            self._balance_box.updateBalances(account_group)
-            self._balance_box.expandAll()
-            
-            self.accountCreated.emit(dialog.accountId())
+            self.accountCreated.emit(dialog.account())
 
     @QtCore.pyqtSlot()
     def _onDelAccountAction(self):
-        selected_item = self._balance_box.selectedItem()
+        selected_item = self._account_tree_box.selectedItem()
 
         if selected_item is None:
             return
-
-        ret = QtWidgets.QMessageBox.question(self, 'Delete account', f"Are you sure to delete account '{selected_item.name()}'?")
-
-        if ret != QtWidgets.QMessageBox.StandardButton.Yes:
+        
+        try:
+            account = selected_item.account()
+        except TypeError:
             return
 
-        if models.AccountTreeModel().removeAccount(selected_item.id()):
-            account_group = self._balance_box.selectedGroup()
+        ret = QtWidgets.QMessageBox.question(
+            self,
+            'Delete account',
+            f"Are you sure to delete account '{selected_item.name(extended=True)}'?"
+        )
 
-            self._balance_box.updateBalances(account_group)
-            self._balance_box.expandAll()
-            
-            self.accountDeleted.emit(selected_item.id())
+        if ret == QtWidgets.QMessageBox.StandardButton.Yes:
+            self._account_table_model.delete(account)
+            self.accountDeleted.emit(account)
     
     @QtCore.pyqtSlot()
     def _onEditAccountAction(self):
-        selected_item = self._balance_box.selectedItem()
+        account = self._account_tree_box.currentAccount()
 
-        if selected_item is None:
+        if account is None:
             return
 
-        dialog = widgets.AccountEditDialog(widgets.AccountEditDialog.EditionMode.Edition, self)
-        dialog.setName(selected_item.name())
-        dialog.setDescription(selected_item.description())
-        
+        dialog = widgets.AccountEditDialog(self._account_table_model, self)
+        dialog.setAccount(account)
+
         if dialog.exec():
-            account_type  = dialog.accountType()
-            account_group = models.AccountGroup.fromAccountType(account_type)
-
-            self._balance_box.updateBalances(account_group)
-            self._balance_box.expandAll()
-
-            self.accountEdited.emit(selected_item.id())
+            self.accountEdited.emit(account)
     
-    @QtCore.pyqtSlot(widgets.AccountTreeWidget, models.AccountTreeItem)
-    def _onCurrentTreeItemChanged(self, tree: widgets.AccountTreeWidget, item: models.AccountTreeItem):
+    @QtCore.pyqtSlot(models.Account)
+    def _onAccountTreeBoxCurrentChanged(self, account: models.Account):
         self._del_account_action.setEnabled(True)
         self._edit_account_action.setEnabled(True)
     
-    @QtCore.pyqtSlot(widgets.AccountTreeWidget, models.AccountTreeItem)
-    def _onTreeDoubleClicked(self, tree: widgets.AccountTreeWidget, item: models.AccountTreeItem):
-        account_id = item.id()
+    @QtCore.pyqtSlot(models.Account)
+    def _onAccountTreeBoxClicked(self, account: models.Account):
+        self.accountClicked.emit(account)
 
-        if account_id is not None:
-            self.accountDoubleClicked.emit(account_id)
+    @QtCore.pyqtSlot(models.Account)
+    def _onAccountTreeBoxDoubleClicked(self, account: models.Account):
+        self.accountDoubleClicked.emit(account)
