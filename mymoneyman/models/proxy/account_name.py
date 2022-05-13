@@ -159,4 +159,4 @@ class AccountNameProxyModel(QtCore.QSortFilterProxyModel):
         if role != Qt.ItemDataRole.DisplayRole:
             return super().data(proxy_index, role)
 
-        return self.account(proxy_index.row()).extendedName()
+        return self.account(proxy_index.row()).extendedName(sep=self._sep)
