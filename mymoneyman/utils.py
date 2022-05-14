@@ -2,6 +2,28 @@ import typing
 import decimal
 from PyQt5 import QtCore
 
+def formatNumber(number: decimal.Decimal, decimals: int = 0, remove_trailing_zero: bool = False) -> str:
+    """Returns the string representation of a number.
+    
+    This method exists because calling `str(number)` may return its
+    representation in scientific notation.
+
+    >>> str(decimal.Decimal('0.000000120'))
+    '1.20E-7'
+    >>> formatNumber(decimal.Decimal('0.000000120'), decimals=9)
+    '0.000000120'
+    >>> formatNumber(decimal.Decimal('0.000000120'), decimals=9, remove_trailing_zero=True)
+    '0.00000012'
+    """
+
+    number_fmt = '{:.' + str(decimals) + 'f}'
+    number_str = number_fmt.format(number)
+
+    if remove_trailing_zero and number_str.find('.') != -1:
+        return number_str.rstrip('0').rstrip('.')
+
+    return number_str
+
 def shortFormatNumber(number: decimal.Decimal, decimals: int = 0) -> str:
     thousands = 0
 
@@ -17,9 +39,7 @@ def shortFormatNumber(number: decimal.Decimal, decimals: int = 0) -> str:
         letter = thousands_letter[thousands]
         number = number / (1000 ** thousands)
 
-        fmt = '{:.' + str(decimals) + 'f}'
-
-        return fmt.format(number) + letter
+        return formatNumber(number, decimals) + letter
 
     except IndexError:
         return round(number, decimals)

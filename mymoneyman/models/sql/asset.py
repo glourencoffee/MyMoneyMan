@@ -97,7 +97,7 @@ class Asset(models.AlchemicalBase):
             return utils.shortFormatNumber(value, decimals or self.precision)
         else:
             # TODO: commas and shit; maybe use locale?
-            return str(round(value, decimals or self.precision))
+            return utils.formatNumber(value, decimals or self.precision)
 
     def formatWithCode(self,
                        value: decimal.Decimal,
