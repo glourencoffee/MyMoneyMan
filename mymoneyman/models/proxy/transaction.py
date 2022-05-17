@@ -313,18 +313,21 @@ class TransactionProxyBalanceItem(TransactionProxyItem):
     __slots__ = '_balance'
 
     def __init__(self, source_index: QtCore.QPersistentModelIndex, account: models.Account):
-        super(TransactionProxyBalanceItem, self).__init__(source_index, account)
+        super().__init__(source_index, account)
 
         self._balance = decimal.Decimal(0)
 
     def balance(self) -> decimal.Decimal:
-        return self._balance
+        account   = self.account()
+        precision = account.precision or account.asset.precision
+
+        return round(self._balance, precision)
 
     def data(self) -> typing.Any:
         return self.balance()
 
     def font(self) -> QtGui.QFont:
-        font = super(TransactionProxyBalanceItem, self).font()
+        font = super().font()
         font.setBold(True)
 
         return font
@@ -340,12 +343,7 @@ class TransactionProxyBalanceItem(TransactionProxyItem):
         return True
     
     def __str__(self) -> str:
-        balance = self.balance()
-
-        if balance != 0:
-            return str(balance)
-        else:
-            return ''
+        return str(self.balance())
 
 class TransactionProxyModel(QtCore.QAbstractItemModel):
     """Shows the transactions of an account.
