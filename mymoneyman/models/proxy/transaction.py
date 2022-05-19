@@ -55,6 +55,9 @@ class TransactionProxyItem:
     def flags(self) -> Qt.ItemFlags:
         return Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable
 
+    def toolTip(self) -> typing.Optional[str]:
+        return None
+
     def data(self) -> typing.Any:
         return None
 
@@ -139,8 +142,23 @@ class TransactionProxyDateItem(TransactionProxyEditableItem):
 
 class TransactionProxyCommentItem(TransactionProxyEditableItem):
     def comment(self) -> str:
-        return self.subtransaction().comment or ''
+        return self.subtransaction().comment
     
+    def toolTip(self) -> typing.Optional[str]:
+        transaction = self.transaction()
+        
+        if not transaction.isSplit():
+            return None
+
+        text = ''
+
+        for sub in transaction.subtransactions:
+            if sub.comment != '':
+                line = f'{sub.comment}\n'
+                text += line
+
+        return text.rstrip('\n')
+
     def data(self) -> typing.Any:
         return self.comment()
 
@@ -179,6 +197,21 @@ class TransactionProxyTransferenceItem(TransactionProxyEditableItem):
 
     def data(self) -> typing.Any:
         return self.transferenceAccount()
+
+    def toolTip(self) -> typing.Optional[str]:
+        transaction = self.transaction()
+        
+        if not transaction.isSplit():
+            return None
+
+        text = ''
+
+        for sub in transaction.subtransactions:
+            if sub.origin is not None and sub.target is not None:
+                line = f'{sub.origin.extendedName()} -> {sub.target.extendedName()}\n'
+                text += line
+
+        return text.rstrip('\n')
 
     def font(self) -> QtGui.QFont:
         font = super(TransactionProxyTransferenceItem, self).font()
@@ -702,6 +735,7 @@ class TransactionProxyModel(QtCore.QAbstractItemModel):
             if   role == Qt.ItemDataRole.DisplayRole: return str(item)
             elif role == Qt.ItemDataRole.EditRole:    return item.data()
             elif role == Qt.ItemDataRole.FontRole:    return item.font()
+            elif role == Qt.ItemDataRole.ToolTipRole: return item.toolTip()
 
         return None
 
