@@ -76,20 +76,15 @@ class AccountPage(QtWidgets.QWidget):
 
     @QtCore.pyqtSlot()
     def _onDelAccountAction(self):
-        selected_item = self._account_tree_box.selectedItem()
+        account = self._account_tree_box.currentAccount()
 
-        if selected_item is None:
-            return
-        
-        try:
-            account = selected_item.account()
-        except TypeError:
+        if account is None:
             return
 
         ret = QtWidgets.QMessageBox.question(
             self,
             'Delete account',
-            f"Are you sure to delete account '{selected_item.name(extended=True)}'?"
+            f"Are you sure to delete account '{account.extendedName()}'?"
         )
 
         if ret == QtWidgets.QMessageBox.StandardButton.Yes:

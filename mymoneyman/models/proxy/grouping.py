@@ -157,7 +157,11 @@ class GroupingProxyModel(QtCore.QAbstractProxyModel):
         """Reimplements `QAbstractItemModel.index()`."""
 
         parent_item = self.itemFromIndex(parent)
-        child_item  = parent_item.child(row)
+
+        try:
+            child_item = parent_item.child(row)
+        except IndexError:
+            return QtCore.QModelIndex()
 
         return self.createIndex(row, column, child_item)
 
